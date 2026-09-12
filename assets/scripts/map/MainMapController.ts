@@ -42,7 +42,7 @@ export class MainMapController extends Component {
     }
 
     private async bootstrap(): Promise<void> {
-        const mapRoot = this.getOrCreateChild(this.node, 'MapRoot');
+        const mapRoot = this.node;
         const tileRoot = this.getOrCreateChild(mapRoot, 'TileRoot');
         const worldObjectRoot = this.getOrCreateChild(mapRoot, 'WorldObjectRoot');
         const structureRoot = this.structureRoot ?? this.getOrCreateChild(worldObjectRoot, 'StructureRoot');
