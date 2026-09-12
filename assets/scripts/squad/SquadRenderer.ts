@@ -5,7 +5,10 @@ import {
     Texture2D,
     UITransform,
 } from 'cc';
-import { GRID_RENDER_SIZE } from '../grid/GridConfig';
+import {
+    GRID_RENDER_SCALE,
+    GRID_RENDER_SIZE,
+} from '../grid/GridConfig';
 import { STATIC_WORLD_OBJECTS } from '../world/StaticWorldObjects';
 import { getWorldVisualDefinition } from '../world/WorldAtlasConfig';
 import { type WorldObjectData } from '../world/WorldObjectTypes';
@@ -74,7 +77,11 @@ export class SquadRenderer {
                 const warriorNode = new Node(`Warrior_${i}`);
                 warriorNode.setParent(squadNode);
                 warriorNode.layer = squadNode.layer;
-                warriorNode.setScale(2, 2, 1);
+                warriorNode.setScale(
+                    GRID_RENDER_SCALE,
+                    GRID_RENDER_SCALE,
+                    1,
+                );
                 warriorNode.setPosition(
                     FORMATION_OFFSETS[i].x * GRID_RENDER_SIZE,
                     -FORMATION_OFFSETS[i].y * GRID_RENDER_SIZE,
