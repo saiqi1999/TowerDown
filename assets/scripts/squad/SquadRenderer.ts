@@ -9,16 +9,20 @@ import {
     GRID_RENDER_SCALE,
     GRID_RENDER_SIZE,
 } from '../grid/GridConfig';
+import { type WorldNavigator } from '../navigation/WorldNavigator';
 import { STATIC_WORLD_OBJECTS } from '../world/StaticWorldObjects';
 import { getWorldVisualDefinition } from '../world/WorldAtlasConfig';
 import { type WorldObjectData } from '../world/WorldObjectTypes';
-import { SquadIdleAI } from './SquadIdleAI';
-import { type SquadSpawnData } from './SquadTypes';
+import { SquadBrain, type SquadHomeBounds } from './SquadBrain';
+import { SquadMotor } from './SquadMotor';
+import { type SquadRuntimeHandle, type SquadSpawnData } from './SquadTypes';
 import { WarriorAnimator } from './WarriorAnimator';
 import {
+    createWarriorAttackFrame,
     createWarriorFrame,
     WarriorDirection,
     type WarriorFrameSet,
+    WARRIOR_ATTACK_FRAME_COUNT,
     WARRIOR_FRAME_SIZE,
     WARRIOR_WALK_FRAME_COUNT,
 } from './WarriorSpriteConfig';
@@ -38,6 +42,8 @@ export class SquadRenderer {
     constructor(
         private readonly squadRoot: Node,
         private readonly warriorTexture: Texture2D,
+        private readonly warriorAttackTexture: Texture2D,
+        private readonly navigator: WorldNavigator,
     ) {}
 
     public clear(): void {
@@ -48,13 +54,19 @@ export class SquadRenderer {
         squads: SquadSpawnData[],
         mapWidth: number,
         mapHeight: number,
-    ): void {
+    ): Map<string, SquadRuntimeHandle> {
         this.clear();
-        const frameSet = this.getOrCreateFrameSet();
+
+        const walkFrameSet = this.getOrCreateWalkFrameSet();
+        const attackFrames = this.getOrCreateAttackFrames();
+        const worldObjectById = new Map<string, WorldObjectData>(
+            STATIC_WORLD_OBJECTS.map((objectData) => [objectData.id, objectData]),
+        );
+        const handles = new Map<string, SquadRuntimeHandle>();
 
         for (const squad of squads) {
             if (squad.memberCount !== 4) {
-                throw new Error(`[SquadRenderer] ${squad.id} requires exactly 4 members in Phase 1.`);
+                throw new Error(`[SquadRenderer] ${squad.id} requires exactly 4 members in Phase 2.`);
             }
 
             const homeObject = this.getHomeObject(squad.homeObjectId);
@@ -62,10 +74,17 @@ export class SquadRenderer {
             const homeLeft = homeObject.gridX;
             const homeRight = homeObject.gridX + homeVisual.w;
             const homeBottom = homeObject.gridY + homeVisual.h;
-            const spawnPoint = {
+            const spawnPoint = squad.spawnPoint ?? {
                 x: (homeLeft + homeRight) / 2,
                 y: homeBottom + 1,
             };
+            const homeRestCell = this.navigator.findNearestWalkableCellInRow(
+                spawnPoint.x,
+                Math.floor(spawnPoint.y),
+            );
+            if (!homeRestCell) {
+                throw new Error(`[SquadRenderer] failed to resolve home rest cell for ${squad.id}`);
+            }
 
             const squadNode = new Node(`Squad_${squad.id}`);
             squadNode.setParent(this.squadRoot);
@@ -95,25 +114,47 @@ export class SquadRenderer {
                 sprite.sizeMode = Sprite.SizeMode.CUSTOM;
 
                 const animator = warriorNode.addComponent(WarriorAnimator);
-                animator.setup(sprite, frameSet, PHASE_OFFSETS[i]);
+                animator.setup(sprite, walkFrameSet, attackFrames, PHASE_OFFSETS[i]);
                 warriors.push(animator);
             }
 
-            const idleAI = squadNode.addComponent(SquadIdleAI);
-            idleAI.setup({
-                squadId: squad.id,
-                homeObjectId: squad.homeObjectId,
+            const motor = squadNode.addComponent(SquadMotor);
+            motor.setup({
                 spawnPoint,
                 mapWidth,
                 mapHeight,
-                homeLeft,
-                homeRight,
-                homeBottom,
                 warriors,
+            });
+
+            const brain = squadNode.addComponent(SquadBrain);
+            const homeBounds: SquadHomeBounds = {
+                left: homeLeft,
+                right: homeRight,
+                bottom: homeBottom,
+                mapWidth,
+                mapHeight,
+            };
+            brain.setup({
+                squadId: squad.id,
+                homeObjectId: squad.homeObjectId,
+                motor,
+                navigator: this.navigator,
+                worldObjectById,
+                warriors,
+                homeRestCell,
+                homeBounds,
+            });
+
+            handles.set(squad.id, {
+                id: squad.id,
+                node: squadNode,
+                motor,
+                brain,
             });
         }
 
         console.log(`[SquadRenderer] rendered ${squads.length} squads.`);
+        return handles;
     }
 
     private getHomeObject(homeObjectId: string): WorldObjectData {
@@ -125,19 +166,19 @@ export class SquadRenderer {
         return homeObject;
     }
 
-    private getOrCreateFrameSet(): WarriorFrameSet {
+    private getOrCreateWalkFrameSet(): WarriorFrameSet {
         return {
-            [WarriorDirection.Down]: this.getFramesForDirection(WarriorDirection.Down),
-            [WarriorDirection.Up]: this.getFramesForDirection(WarriorDirection.Up),
-            [WarriorDirection.Left]: this.getFramesForDirection(WarriorDirection.Left),
-            [WarriorDirection.Right]: this.getFramesForDirection(WarriorDirection.Right),
+            [WarriorDirection.Down]: this.getWalkFramesForDirection(WarriorDirection.Down),
+            [WarriorDirection.Up]: this.getWalkFramesForDirection(WarriorDirection.Up),
+            [WarriorDirection.Left]: this.getWalkFramesForDirection(WarriorDirection.Left),
+            [WarriorDirection.Right]: this.getWalkFramesForDirection(WarriorDirection.Right),
         };
     }
 
-    private getFramesForDirection(direction: WarriorDirection): SpriteFrame[] {
+    private getWalkFramesForDirection(direction: WarriorDirection): SpriteFrame[] {
         const frames: SpriteFrame[] = [];
         for (let frameIndex = 0; frameIndex < WARRIOR_WALK_FRAME_COUNT; frameIndex += 1) {
-            const key = `${direction}_${frameIndex}`;
+            const key = `walk_${direction}_${frameIndex}`;
             const cached = this.frameCache.get(key);
             if (cached) {
                 frames.push(cached);
@@ -145,6 +186,24 @@ export class SquadRenderer {
             }
 
             const frame = createWarriorFrame(this.warriorTexture, direction, frameIndex);
+            this.frameCache.set(key, frame);
+            frames.push(frame);
+        }
+
+        return frames;
+    }
+
+    private getOrCreateAttackFrames(): SpriteFrame[] {
+        const frames: SpriteFrame[] = [];
+        for (let frameIndex = 0; frameIndex < WARRIOR_ATTACK_FRAME_COUNT; frameIndex += 1) {
+            const key = `attack_${frameIndex}`;
+            const cached = this.frameCache.get(key);
+            if (cached) {
+                frames.push(cached);
+                continue;
+            }
+
+            const frame = createWarriorAttackFrame(this.warriorAttackTexture, frameIndex);
             this.frameCache.set(key, frame);
             frames.push(frame);
         }

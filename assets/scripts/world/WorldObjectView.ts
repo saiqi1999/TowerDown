@@ -1,4 +1,4 @@
-import { _decorator, Component } from 'cc';
+import { _decorator, Component, Node } from 'cc';
 import { ResourceType, WorldObjectKind } from './WorldObjectTypes';
 
 const { ccclass } = _decorator;
@@ -12,4 +12,23 @@ export class WorldObjectView extends Component {
     public gridW = 1;
     public gridH = 1;
     public resourceType: ResourceType | null = null;
+    private clickHandler: ((objectId: string) => void) | null = null;
+
+    onEnable(): void {
+        this.node.on(Node.EventType.TOUCH_END, this.handleTouchEnd, this);
+    }
+
+    onDisable(): void {
+        this.node.off(Node.EventType.TOUCH_END, this.handleTouchEnd, this);
+    }
+
+    public bindClickHandler(
+        handler: (objectId: string) => void,
+    ): void {
+        this.clickHandler = handler;
+    }
+
+    private handleTouchEnd(): void {
+        this.clickHandler?.(this.objectId);
+    }
 }
