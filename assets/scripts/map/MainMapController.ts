@@ -2,7 +2,6 @@ import {
     _decorator,
     assetManager,
     Component,
-    find,
     Node,
     SpriteFrame,
     Texture2D,
@@ -17,6 +16,9 @@ import {
 } from '../world/WorldAtlasConfig';
 import { STATIC_WORLD_OBJECTS } from '../world/StaticWorldObjects';
 import { WorldObjectRenderer } from '../world/WorldObjectRenderer';
+import { STATIC_SQUADS } from '../squad/StaticSquads';
+import { SquadRenderer } from '../squad/SquadRenderer';
+import { WARRIOR_TEXTURE_UUID } from '../squad/WarriorSpriteConfig';
 
 const { ccclass, property } = _decorator;
 
@@ -34,8 +36,12 @@ export class MainMapController extends Component {
     @property(Texture2D)
     public natureAtlasTexture: Texture2D | null = null;
 
+    @property(Texture2D)
+    public warriorTexture: Texture2D | null = null;
+
     private mapRenderer: MapRenderer | null = null;
     private worldObjectRenderer: WorldObjectRenderer | null = null;
+    private squadRenderer: SquadRenderer | null = null;
 
     start(): void {
         void this.bootstrap();
@@ -43,15 +49,19 @@ export class MainMapController extends Component {
 
     private async bootstrap(): Promise<void> {
         const mapRoot = this.node;
-        const tileRoot = this.getOrCreateChild(mapRoot, 'TileRoot');
-        const worldObjectRoot = this.getOrCreateChild(mapRoot, 'WorldObjectRoot');
-        const structureRoot = this.structureRoot ?? this.getOrCreateChild(worldObjectRoot, 'StructureRoot');
-        const resourceRoot = this.resourceRoot ?? this.getOrCreateChild(worldObjectRoot, 'ResourceRoot');
+        const tileRoot = this.requireChild(mapRoot, 'TileRoot');
+        const worldObjectRoot = this.requireChild(mapRoot, 'WorldObjectRoot');
+        const structureRoot = this.requireChild(worldObjectRoot, 'StructureRoot');
+        const resourceRoot = this.requireChild(worldObjectRoot, 'ResourceRoot');
+        const actorRoot = this.requireChild(mapRoot, 'ActorRoot');
+        const squadRoot = this.requireChild(actorRoot, 'SquadRoot');
         this.ensureUITransform(mapRoot);
         this.ensureUITransform(tileRoot);
         this.ensureUITransform(worldObjectRoot);
         this.ensureUITransform(structureRoot);
         this.ensureUITransform(resourceRoot);
+        this.ensureUITransform(actorRoot);
+        this.ensureUITransform(squadRoot);
 
         const atlasSpriteFrame = await this.loadAtlasSpriteFrame();
         const buildingTexture = await this.resolveTexture(
@@ -64,11 +74,17 @@ export class MainMapController extends Component {
             NATURE_ATLAS_TEXTURE_UUID,
             'nature atlas',
         );
+        const warriorTexture = await this.resolveTexture(
+            this.warriorTexture,
+            WARRIOR_TEXTURE_UUID,
+            'warrior texture',
+        );
 
         this.structureRoot = structureRoot;
         this.resourceRoot = resourceRoot;
         this.buildingAtlasTexture = buildingTexture;
         this.natureAtlasTexture = natureTexture;
+        this.warriorTexture = warriorTexture;
 
         this.mapRenderer = new MapRenderer(tileRoot, atlasSpriteFrame);
         this.mapRenderer.render(STATIC_MAP);
@@ -81,6 +97,16 @@ export class MainMapController extends Component {
         );
         this.worldObjectRenderer.render(
             STATIC_WORLD_OBJECTS,
+            STATIC_MAP[0]?.length ?? 0,
+            STATIC_MAP.length,
+        );
+
+        this.squadRenderer = new SquadRenderer(
+            squadRoot,
+            warriorTexture,
+        );
+        this.squadRenderer.render(
+            STATIC_SQUADS,
             STATIC_MAP[0]?.length ?? 0,
             STATIC_MAP.length,
         );
@@ -110,16 +136,15 @@ export class MainMapController extends Component {
         });
     }
 
-    private getOrCreateChild(parent: Node, name: string): Node {
-        const existing = find(name, parent) ?? parent.getChildByName(name);
-        if (existing) {
-            return existing;
+    private requireChild(parent: Node, name: string): Node {
+        const child = parent.getChildByName(name);
+        if (!child) {
+            throw new Error(
+                `[MainMapController] required node missing: ${parent.name}/${name}`,
+            );
         }
 
-        const node = new Node(name);
-        node.setParent(parent);
-        node.layer = parent.layer;
-        return node;
+        return child;
     }
 
     private ensureUITransform(node: Node): UITransform {
