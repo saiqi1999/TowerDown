@@ -2,11 +2,13 @@ import {
     _decorator,
     assetManager,
     Component,
+    Material,
     Node,
     SpriteFrame,
     Texture2D,
     UITransform,
 } from 'cc';
+import { CombatEventHub } from '../combat/CombatEventHub';
 import { WorldCommandController } from '../command/WorldCommandController';
 import { AStarPathfinder } from '../navigation/AStarPathfinder';
 import { NavigationGridBuilder } from '../navigation/NavigationGridBuilder';
@@ -52,9 +54,13 @@ export class MainMapController extends Component {
     @property(Texture2D)
     public warriorAttackTexture: Texture2D | null = null;
 
+    @property(Material)
+    public hitFlashMaterial: Material | null = null;
+
     private mapRenderer: MapRenderer | null = null;
     private worldObjectRenderer: WorldObjectRenderer | null = null;
     private squadRenderer: SquadRenderer | null = null;
+    private combatEventHub: CombatEventHub | null = null;
 
     start(): void {
         void this.bootstrap();
@@ -107,6 +113,10 @@ export class MainMapController extends Component {
             this.warriorAttackTexture,
             'warriorAttackTexture',
         );
+        const hitFlashMaterial = this.requireInspectorMaterial(
+            this.hitFlashMaterial,
+            'hitFlashMaterial',
+        );
 
         this.structureRoot = structureRoot;
         this.resourceRoot = resourceRoot;
@@ -115,6 +125,8 @@ export class MainMapController extends Component {
         this.warriorTexture = warriorTexture;
         this.targetFlagTexture = targetFlagTexture;
         this.warriorAttackTexture = warriorAttackTexture;
+        this.hitFlashMaterial = hitFlashMaterial;
+        this.combatEventHub = new CombatEventHub();
 
         this.mapRenderer = new MapRenderer(tileRoot, atlasSpriteFrame);
         this.mapRenderer.render(STATIC_MAP);
@@ -124,6 +136,8 @@ export class MainMapController extends Component {
             resourceRoot,
             buildingTexture,
             natureTexture,
+            this.combatEventHub,
+            hitFlashMaterial,
         );
         this.worldObjectRenderer.render(
             STATIC_WORLD_OBJECTS,
@@ -147,6 +161,7 @@ export class MainMapController extends Component {
             warriorAttackTexture,
             navigationGrid,
             navigator,
+            this.combatEventHub,
         );
         const squadHandles = this.squadRenderer.render(
             STATIC_SQUADS,
@@ -239,5 +254,16 @@ export class MainMapController extends Component {
         }
 
         return texture;
+    }
+
+    private requireInspectorMaterial(
+        material: Material | null,
+        propertyName: string,
+    ): Material {
+        if (!material) {
+            throw new Error(`[MainMapController] ${propertyName} must be assigned in Inspector.`);
+        }
+
+        return material;
     }
 }

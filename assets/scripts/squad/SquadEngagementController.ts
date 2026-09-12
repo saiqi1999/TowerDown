@@ -1,4 +1,5 @@
 import { _decorator, Component } from 'cc';
+import { CombatEventHub } from '../combat/CombatEventHub';
 import { type GridPoint } from '../navigation/NavigationTypes';
 import { getWorldVisualDefinition } from '../world/WorldAtlasConfig';
 import { type WorldObjectData } from '../world/WorldObjectTypes';
@@ -29,6 +30,7 @@ export interface SquadEngagementConfig {
     warriorMotors: WarriorMotor[];
     warriorAnimators: WarriorAnimator[];
     slotResolver: InteractionSlotResolver;
+    combatEventHub: CombatEventHub;
 }
 
 interface AssignmentCandidate {
@@ -45,6 +47,7 @@ export class SquadEngagementController extends Component {
     private warriorMotors: WarriorMotor[] = [];
     private warriorAnimators: WarriorAnimator[] = [];
     private slotResolver: InteractionSlotResolver | null = null;
+    private combatEventHub: CombatEventHub | null = null;
     private currentTarget: WorldObjectData | null = null;
     private assignments: WarriorSlotAssignment[] = [];
     private state = SquadEngagementState.Inactive;
@@ -57,11 +60,18 @@ export class SquadEngagementController extends Component {
         this.warriorMotors = [...config.warriorMotors];
         this.warriorAnimators = [...config.warriorAnimators];
         this.slotResolver = config.slotResolver;
+        this.combatEventHub = config.combatEventHub;
         this.currentTarget = null;
         this.assignments = [];
         this.state = SquadEngagementState.Inactive;
         this.anyWarriorEngaged = false;
         this.initialized = true;
+
+        for (let index = 0; index < this.warriorAnimators.length; index += 1) {
+            this.warriorAnimators[index]?.bindAttackImpactHandler(() => {
+                this.onWarriorAttackImpact(index);
+            });
+        }
     }
 
     public beginInteraction(target: WorldObjectData): boolean {
@@ -149,6 +159,12 @@ export class SquadEngagementController extends Component {
         return this.state;
     }
 
+    onDestroy(): void {
+        for (const animator of this.warriorAnimators) {
+            animator.bindAttackImpactHandler(null);
+        }
+    }
+
     update(): void {
         if (!this.initialized) {
             return;
@@ -186,6 +202,26 @@ export class SquadEngagementController extends Component {
         if (this.anyWarriorEngaged) {
             this.state = SquadEngagementState.Engaged;
         }
+    }
+
+    private onWarriorAttackImpact(
+        warriorIndex: number,
+    ): void {
+        if (!this.currentTarget || !this.combatEventHub) {
+            return;
+        }
+
+        const assignment = this.assignments.find(
+            (candidate) => candidate.warriorIndex === warriorIndex,
+        );
+        if (!assignment || assignment.state !== 'attacking') {
+            return;
+        }
+
+        this.combatEventHub.emitAttackImpact({
+            attackerId: `${this.squadId}/warrior_${warriorIndex}`,
+            targetId: this.currentTarget.id,
+        });
     }
 
     private tryCompleteReform(): void {

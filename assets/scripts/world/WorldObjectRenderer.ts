@@ -1,4 +1,5 @@
 import {
+    Material,
     Node,
     Rect,
     Size,
@@ -8,6 +9,8 @@ import {
     UITransform,
     Vec2,
 } from 'cc';
+import { CombatEventHub } from '../combat/CombatEventHub';
+import { HitFlashView } from '../feedback/HitFlashView';
 import { GRID_RENDER_SCALE, GRID_SOURCE_SIZE } from '../grid/GridConfig';
 import { gridRectToWorldCenter } from '../grid/GridTransform';
 import {
@@ -20,6 +23,7 @@ import {
     WorldObjectKind,
     WorldVisualId,
 } from './WorldObjectTypes';
+import { WorldObjectAttackReceiver } from './WorldObjectAttackReceiver';
 import { WorldObjectView } from './WorldObjectView';
 
 export class WorldObjectRenderer {
@@ -30,11 +34,13 @@ export class WorldObjectRenderer {
         private readonly resourceRoot: Node,
         private readonly buildingTexture: Texture2D,
         private readonly natureTexture: Texture2D,
+        private readonly combatEventHub: CombatEventHub,
+        private readonly hitFlashMaterial: Material,
     ) {}
 
     public clear(): void {
-        this.structureRoot.removeAllChildren();
-        this.resourceRoot.removeAllChildren();
+        this.clearRoot(this.structureRoot);
+        this.clearRoot(this.resourceRoot);
     }
 
     public render(objects: WorldObjectData[], mapWidth: number, mapHeight: number): void {
@@ -77,6 +83,21 @@ export class WorldObjectRenderer {
             view.gridW = definition.w;
             view.gridH = definition.h;
             view.resourceType = objectData.resourceType ?? null;
+
+            if (objectData.kind === WorldObjectKind.Resource) {
+                const hitFlashView = node.addComponent(HitFlashView);
+                hitFlashView.setup({
+                    sprite,
+                    baseMaterial: this.hitFlashMaterial,
+                });
+
+                const attackReceiver = node.addComponent(WorldObjectAttackReceiver);
+                attackReceiver.setup({
+                    objectId: objectData.id,
+                    combatEventHub: this.combatEventHub,
+                    hitFlashView,
+                });
+            }
         }
 
         console.log(`[WorldObjectRenderer] rendered ${objects.length} world objects.`);
@@ -108,6 +129,15 @@ export class WorldObjectRenderer {
                     occupiedCells.add(key);
                 }
             }
+        }
+    }
+
+    private clearRoot(root: Node): void {
+        for (const child of [...root.children]) {
+            child.getComponent(WorldObjectAttackReceiver)?.dispose();
+            // 先从树上摘掉再 destroy，避免同一帧重建时旧 receiver 仍占着 targetId。
+            child.removeFromParent();
+            child.destroy();
         }
     }
 

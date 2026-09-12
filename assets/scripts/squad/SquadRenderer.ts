@@ -5,6 +5,7 @@ import {
     Texture2D,
     UITransform,
 } from 'cc';
+import { CombatEventHub } from '../combat/CombatEventHub';
 import {
     GRID_RENDER_SCALE,
 } from '../grid/GridConfig';
@@ -46,6 +47,7 @@ export class SquadRenderer {
         private readonly warriorAttackTexture: Texture2D,
         private readonly navigationGrid: NavigationGrid,
         private readonly navigator: WorldNavigator,
+        private readonly combatEventHub: CombatEventHub,
     ) {}
 
     public clear(): void {
@@ -144,6 +146,7 @@ export class SquadRenderer {
                 warriorMotors,
                 warriorAnimators: warriors,
                 slotResolver: new InteractionSlotResolver(this.navigationGrid),
+                combatEventHub: this.combatEventHub,
             });
 
             const brain = squadNode.addComponent(SquadBrain);
