@@ -7,16 +7,23 @@ import {
 } from 'cc';
 import {
     GRID_RENDER_SCALE,
-    GRID_RENDER_SIZE,
 } from '../grid/GridConfig';
+import { type NavigationGrid } from '../navigation/NavigationGrid';
 import { type WorldNavigator } from '../navigation/WorldNavigator';
 import { STATIC_WORLD_OBJECTS } from '../world/StaticWorldObjects';
 import { getWorldVisualDefinition } from '../world/WorldAtlasConfig';
 import { type WorldObjectData } from '../world/WorldObjectTypes';
 import { SquadBrain, type SquadHomeBounds } from './SquadBrain';
+import { InteractionSlotResolver } from './InteractionSlotResolver';
+import { SquadEngagementController } from './SquadEngagementController';
 import { SquadMotor } from './SquadMotor';
-import { type SquadRuntimeHandle, type SquadSpawnData } from './SquadTypes';
+import {
+    SQUAD_FORMATION_OFFSETS,
+    type SquadRuntimeHandle,
+    type SquadSpawnData,
+} from './SquadTypes';
 import { WarriorAnimator } from './WarriorAnimator';
+import { WarriorMotor } from './WarriorMotor';
 import {
     createWarriorAttackFrame,
     createWarriorFrame,
@@ -26,13 +33,6 @@ import {
     WARRIOR_FRAME_SIZE,
     WARRIOR_WALK_FRAME_COUNT,
 } from './WarriorSpriteConfig';
-
-const FORMATION_OFFSETS = [
-    { x: -0.38, y: -0.2 },
-    { x: 0.38, y: -0.2 },
-    { x: -0.38, y: 0.45 },
-    { x: 0.38, y: 0.45 },
-] as const;
 
 const PHASE_OFFSETS = [0, 2, 1, 3] as const;
 const ATTACK_PHASE_OFFSETS = [0, 1, 1, 0] as const;
@@ -44,6 +44,7 @@ export class SquadRenderer {
         private readonly squadRoot: Node,
         private readonly warriorTexture: Texture2D,
         private readonly warriorAttackTexture: Texture2D,
+        private readonly navigationGrid: NavigationGrid,
         private readonly navigator: WorldNavigator,
     ) {}
 
@@ -93,6 +94,7 @@ export class SquadRenderer {
             squadNode.addComponent(UITransform);
 
             const warriors: WarriorAnimator[] = [];
+            const warriorMotors: WarriorMotor[] = [];
             for (let i = 0; i < squad.memberCount; i += 1) {
                 const warriorNode = new Node(`Warrior_${i}`);
                 warriorNode.setParent(squadNode);
@@ -101,11 +103,6 @@ export class SquadRenderer {
                     GRID_RENDER_SCALE,
                     GRID_RENDER_SCALE,
                     1,
-                );
-                warriorNode.setPosition(
-                    FORMATION_OFFSETS[i].x * GRID_RENDER_SIZE,
-                    -FORMATION_OFFSETS[i].y * GRID_RENDER_SIZE,
-                    0,
                 );
 
                 const transform = warriorNode.addComponent(UITransform);
@@ -123,6 +120,13 @@ export class SquadRenderer {
                     ATTACK_PHASE_OFFSETS[i],
                 );
                 warriors.push(animator);
+
+                const warriorMotor = warriorNode.addComponent(WarriorMotor);
+                warriorMotor.setup({
+                    animator,
+                    formationOffset: SQUAD_FORMATION_OFFSETS[i]!,
+                });
+                warriorMotors.push(warriorMotor);
             }
 
             const motor = squadNode.addComponent(SquadMotor);
@@ -131,6 +135,15 @@ export class SquadRenderer {
                 mapWidth,
                 mapHeight,
                 warriors,
+            });
+
+            const engagement = squadNode.addComponent(SquadEngagementController);
+            engagement.setup({
+                squadId: squad.id,
+                squadMotor: motor,
+                warriorMotors,
+                warriorAnimators: warriors,
+                slotResolver: new InteractionSlotResolver(this.navigationGrid),
             });
 
             const brain = squadNode.addComponent(SquadBrain);
@@ -145,6 +158,7 @@ export class SquadRenderer {
                 squadId: squad.id,
                 homeObjectId: squad.homeObjectId,
                 motor,
+                engagement,
                 navigator: this.navigator,
                 worldObjectById,
                 warriors,
@@ -156,6 +170,7 @@ export class SquadRenderer {
                 id: squad.id,
                 node: squadNode,
                 motor,
+                engagement,
                 brain,
             });
         }

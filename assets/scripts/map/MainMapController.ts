@@ -145,6 +145,7 @@ export class MainMapController extends Component {
             squadRoot,
             warriorTexture,
             warriorAttackTexture,
+            navigationGrid,
             navigator,
         );
         const squadHandles = this.squadRenderer.render(

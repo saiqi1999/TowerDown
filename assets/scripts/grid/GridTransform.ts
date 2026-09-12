@@ -46,3 +46,14 @@ export function gridRectToWorldCenter(
         mapHeight,
     );
 }
+
+export function gridOffsetToLocalWorld(
+    dxCells: number,
+    dyCells: number,
+): Vec3 {
+    return new Vec3(
+        dxCells * GRID_RENDER_SIZE,
+        -dyCells * GRID_RENDER_SIZE,
+        0,
+    );
+}
