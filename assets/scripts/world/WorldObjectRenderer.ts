@@ -130,11 +130,15 @@ export class WorldObjectRenderer {
         const definition = getWorldVisualDefinition(visualId);
         const rect = getWorldVisualRect(visualId);
         const texture = this.getTexture(definition.atlas);
-        const cocosY = texture.height - rect.y - rect.height;
 
         const frame = new SpriteFrame();
         frame.texture = texture;
-        frame.rect = new Rect(rect.x, cocosY, rect.width, rect.height);
+        frame.rect = new Rect(
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+        );
         frame.originalSize = new Size(rect.width, rect.height);
         frame.offset = new Vec2(0, 0);
         frame.rotated = false;
