@@ -67,6 +67,7 @@ export class MainMapController extends Component {
     }
 
     private async bootstrap(): Promise<void> {
+        // MainMapController 作为 composition root 统一创建并注入 CombatEventHub，避免攻击事件链退化成全局单例。
         const mapRoot = this.node;
         const tileRoot = this.requireChild(mapRoot, 'TileRoot');
         const worldObjectRoot = this.requireChild(mapRoot, 'WorldObjectRoot');
@@ -260,6 +261,7 @@ export class MainMapController extends Component {
         material: Material | null,
         propertyName: string,
     ): Material {
+        // hit flash material 明确要求由编辑器绑定，这样 effect/material 的可视化调参仍然留在美术友好的工作流里。
         if (!material) {
             throw new Error(`[MainMapController] ${propertyName} must be assigned in Inspector.`);
         }

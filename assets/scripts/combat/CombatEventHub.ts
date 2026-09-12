@@ -3,6 +3,7 @@ import { type AttackImpactReceiver, type AttackImpactSignal } from './CombatType
 export class CombatEventHub {
     private readonly receivers = new Map<string, AttackImpactReceiver>();
 
+    // Hub 明确要求一个 targetId 只对应一个接收端，避免后续同名对象把命中路由静默覆盖。
     public registerReceiver(
         targetId: string,
         receiver: AttackImpactReceiver,
@@ -15,6 +16,7 @@ export class CombatEventHub {
         this.receivers.set(targetId, receiver);
     }
 
+    // unregister 采用“同一个实例才可移除”的规则，是为了防止旧节点销毁时把新节点刚注册的 receiver 一并删掉。
     public unregisterReceiver(
         targetId: string,
         receiver: AttackImpactReceiver,
@@ -27,6 +29,7 @@ export class CombatEventHub {
         this.receivers.delete(targetId);
     }
 
+    // emit 只做 targetId 路由，不夹带任何资源/伤害逻辑，这样未来怪物和建筑也能复用同一条攻击事件链。
     public emitAttackImpact(
         signal: AttackImpactSignal,
     ): void {

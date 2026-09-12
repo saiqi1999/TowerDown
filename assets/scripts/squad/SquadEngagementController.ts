@@ -55,6 +55,7 @@ export class SquadEngagementController extends Component {
     private initialized = false;
 
     public setup(config: SquadEngagementConfig): void {
+        // impact handler 在 setup 时一次性绑定到 warrior index，是为了避免每次 beginInteraction 反复覆盖闭包。
         this.squadId = config.squadId;
         this.squadMotor = config.squadMotor;
         this.warriorMotors = [...config.warriorMotors];
@@ -75,6 +76,7 @@ export class SquadEngagementController extends Component {
     }
 
     public beginInteraction(target: WorldObjectData): boolean {
+        // beginInteraction 负责把“接近目标”切换成“围住目标”，所以在这里一次性固定 target、slots 和 assignment。
         if (!this.initialized || !this.squadMotor || !this.slotResolver) {
             return false;
         }
@@ -124,6 +126,7 @@ export class SquadEngagementController extends Component {
     }
 
     public cancelAndReform(): void {
+        // Reform 时立即清 currentTarget 和 assignments，是为了拦住动画尾帧晚到的旧 impact，避免它继续命中旧目标。
         if (!this.initialized) {
             return;
         }
@@ -160,12 +163,14 @@ export class SquadEngagementController extends Component {
     }
 
     onDestroy(): void {
+        // Controller 销毁时主动解绑 animator callback，避免子节点动画在销毁边界上还回调已经失效的 controller。
         for (const animator of this.warriorAnimators) {
             animator.bindAttackImpactHandler(null);
         }
     }
 
     update(): void {
+        // Controller 的 update 只做状态跃迁检查，不做逐帧位移；局部移动仍然由 WarriorMotor 自己推进。
         if (!this.initialized) {
             return;
         }
@@ -182,6 +187,7 @@ export class SquadEngagementController extends Component {
     }
 
     private updateAssignments(): void {
+        // 到位即进入 attacking，而不是等全队到齐，是为了保证“谁先贴边谁先打”的交互节奏。
         for (const assignment of this.assignments) {
             if (assignment.state !== 'moving') {
                 continue;
@@ -207,6 +213,7 @@ export class SquadEngagementController extends Component {
     private onWarriorAttackImpact(
         warriorIndex: number,
     ): void {
+        // callback 到这里才补齐 attackerId / targetId，因为这些信息属于交战上下文，不属于动画组件本身。
         if (!this.currentTarget || !this.combatEventHub) {
             return;
         }
@@ -225,6 +232,7 @@ export class SquadEngagementController extends Component {
     }
 
     private tryCompleteReform(): void {
+        // Reform 完成条件看“是否回到阵型点”而不是单纯依赖 arrived 事件，避免重复 returnToFormation 时漏判完成。
         for (const motor of this.warriorMotors) {
             motor.consumeArrived();
             if (!this.isAtFormation(motor)) {

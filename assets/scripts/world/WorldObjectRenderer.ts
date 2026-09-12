@@ -39,11 +39,13 @@ export class WorldObjectRenderer {
     ) {}
 
     public clear(): void {
+        // WorldObject 现在带有 combat receiver，clear 不能再只是摘节点，否则 hub 里会留下失效 targetId。
         this.clearRoot(this.structureRoot);
         this.clearRoot(this.resourceRoot);
     }
 
     public render(objects: WorldObjectData[], mapWidth: number, mapHeight: number): void {
+        // render 时顺手完成资源侧的 receiver + flash view 装配，让资源节点成为完整的“可被命中目标”。
         this.clear();
         this.validateObjects(objects, mapWidth, mapHeight);
 
@@ -133,6 +135,7 @@ export class WorldObjectRenderer {
     }
 
     private clearRoot(root: Node): void {
+        // 这里先 dispose 再 destroy，是为了保证 combat hub 的注销时机早于同帧内的新节点重建。
         for (const child of [...root.children]) {
             child.getComponent(WorldObjectAttackReceiver)?.dispose();
             // 先从树上摘掉再 destroy，避免同一帧重建时旧 receiver 仍占着 targetId。

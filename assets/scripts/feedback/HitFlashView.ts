@@ -19,6 +19,7 @@ export class HitFlashView extends Component {
     private initialized = false;
 
     public setup(config: HitFlashViewConfig): void {
+        // 这里强制从共享材质派生实例，是为了把“资源共用同一份效果定义”和“每个资源独立改 flashAmount”同时满足。
         this.sprite = config.sprite;
         this.sprite.setSharedMaterial(config.baseMaterial, 0);
         this.materialInstance = this.sprite.getMaterialInstance(0);
@@ -34,6 +35,7 @@ export class HitFlashView extends Component {
     }
 
     public flash(): void {
+        // flash 采用 restart 而不是排队，是为了让多人连续命中时仍然维持简洁、稳定的受击反馈。
         if (!this.initialized) {
             return;
         }
@@ -45,6 +47,7 @@ export class HitFlashView extends Component {
     }
 
     update(dt: number): void {
+        // 不使用 Tween，是为了避免同一资源短时间多次受击时堆叠出多条并发动画和计时器。
         if (!this.flashing) {
             return;
         }
@@ -66,12 +69,14 @@ export class HitFlashView extends Component {
     }
 
     onDisable(): void {
+        // 节点被隐藏时立刻归零，避免资源池复用或开关节点后残留半白状态。
         this.flashing = false;
         this.elapsed = 0;
         this.setFlashAmount(0);
     }
 
     onDestroy(): void {
+        // 销毁时连同材质实例一起释放，防止 runtime instance 越积越多。
         this.flashing = false;
         this.elapsed = 0;
         this.setFlashAmount(0);
@@ -81,6 +86,7 @@ export class HitFlashView extends Component {
     }
 
     private setFlashAmount(value: number): void {
+        // flashAmount 是 shader 唯一的可写入口，这样视觉层就不会反向耦合到任何战斗字段。
         this.materialInstance?.setProperty('flashAmount', value);
     }
 }

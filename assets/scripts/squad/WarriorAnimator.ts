@@ -39,6 +39,7 @@ export class WarriorAnimator extends Component {
         walkPhaseOffset: number,
         attackPhaseOffset: number,
     ): void {
+        // 命中回调和 Attack Pose 可见状态都在 setup 时统一清空，避免节点复用时把上一次战斗的边沿状态带进来。
         this.sprite = sprite;
         this.walkFrameSet = walkFrameSet;
         this.attackFrameSet = attackFrameSet;
@@ -55,6 +56,7 @@ export class WarriorAnimator extends Component {
         this.applyFrame();
     }
 
+    // Animator 只报告“命中时刻”，不感知 targetId / attackerId，保持动画层与战斗层解耦。
     public bindAttackImpactHandler(
         handler: (() => void) | null,
     ): void {
@@ -62,6 +64,7 @@ export class WarriorAnimator extends Component {
     }
 
     public playIdle(direction?: WarriorDirection): void {
+        // 离开 Attack 时必须重置 attackPoseVisible，否则下一次重新进入 Attack 时会丢掉首个命中边沿。
         if (direction !== undefined) {
             this.direction = direction;
         }
@@ -80,6 +83,7 @@ export class WarriorAnimator extends Component {
     }
 
     public playWalk(direction: WarriorDirection): void {
+        // Walk 和 Idle 一样都要清掉 Attack 边沿状态，避免“移动中仍保留上一拍命中可见”这种脏状态。
         const directionChanged = this.direction !== direction;
         this.direction = direction;
 
@@ -117,6 +121,7 @@ export class WarriorAnimator extends Component {
     }
 
     update(dt: number): void {
+        // AttackImpact 的时机必须跟着真正显示出来的 Pose 走，所以命中检测继续放在帧推进之后而不是外层状态切换里。
         if (!this.sprite || !this.walkFrameSet || !this.attackFrameSet) {
             return;
         }
@@ -144,6 +149,7 @@ export class WarriorAnimator extends Component {
     }
 
     private applyFrame(): void {
+        // 这里用“非 Attack Pose -> Attack Pose”的边沿触发命中，避免 Attack Pose 停留期间每帧都重复 emit。
         if (!this.sprite || !this.walkFrameSet || !this.attackFrameSet) {
             return;
         }

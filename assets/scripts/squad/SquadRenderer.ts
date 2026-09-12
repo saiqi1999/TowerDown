@@ -59,6 +59,7 @@ export class SquadRenderer {
         mapWidth: number,
         mapHeight: number,
     ): Map<string, SquadRuntimeHandle> {
+        // Renderer 现在除了创建可见节点，还负责把 warrior 动画端和 engagement/combat 端在运行时装配起来。
         this.clear();
 
         const walkFrameSet = this.getOrCreateWalkFrameSet();
@@ -146,6 +147,7 @@ export class SquadRenderer {
                 warriorMotors,
                 warriorAnimators: warriors,
                 slotResolver: new InteractionSlotResolver(this.navigationGrid),
+                // 同一个 combat hub 必须注入 squad 和 world object 两侧，命中事件才能真正闭环。
                 combatEventHub: this.combatEventHub,
             });
 
