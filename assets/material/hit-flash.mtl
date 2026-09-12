@@ -10,7 +10,9 @@
   },
   "_techIdx": 0,
   "_defines": [
-    {}
+    {
+      "USE_TEXTURE": true
+    }
   ],
   "_states": [
     {
@@ -24,8 +26,6 @@
     }
   ],
   "_props": [
-    {
-      "flashAmount": 0.6
-    }
+    {}
   ]
 }
