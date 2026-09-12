@@ -18,7 +18,7 @@ export class SquadMotor extends Component {
     private currentGridPoint: GridPoint = { x: 0, y: 0 };
     private waypoints: GridPoint[] = [];
     private waypointIndex = 0;
-    private moveSpeedCellsPerSecond = 1.25;
+    private moveSpeedCellsPerSecond = 4.25;
     private mapWidth = 0;
     private mapHeight = 0;
     private warriors: WarriorAnimator[] = [];
