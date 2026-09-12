@@ -1,8 +1,8 @@
-import { _decorator, Component, Sprite, type SpriteFrame } from 'cc';
+import { _decorator, Component, Sprite } from 'cc';
 import {
     WarriorDirection,
+    type WarriorAttackFrameSet,
     type WarriorFrameSet,
-    WARRIOR_ATTACK_FRAME_COUNT,
     WARRIOR_WALK_FRAME_COUNT,
 } from './WarriorSpriteConfig';
 
@@ -18,27 +18,33 @@ export enum WarriorAnimationState {
 export class WarriorAnimator extends Component {
     private sprite: Sprite | null = null;
     private walkFrameSet: WarriorFrameSet | null = null;
-    private attackFrames: SpriteFrame[] | null = null;
+    private attackFrameSet: WarriorAttackFrameSet | null = null;
     private direction = WarriorDirection.Down;
     private animationState = WarriorAnimationState.Idle;
-    private frameIndex = 0;
+    private walkFrameIndex = 0;
+    private attackPhase = 0;
     private frameTimer = 0;
     private walkFrameDuration = 0.15;
-    private attackFrameDuration = 0.12;
-    private phaseOffset = 0;
+    private attackFrameDuration = 0.15;
+    private walkPhaseOffset = 0;
+    private attackPhaseOffset = 0;
 
+    // Walk 是 4 帧循环，Attack 是 2 帧循环，历史上共用一个 phaseOffset 会把两种周期混在一起。
     public setup(
         sprite: Sprite,
         walkFrameSet: WarriorFrameSet,
-        attackFrames: SpriteFrame[],
-        phaseOffset: number,
+        attackFrameSet: WarriorAttackFrameSet,
+        walkPhaseOffset: number,
+        attackPhaseOffset: number,
     ): void {
         this.sprite = sprite;
         this.walkFrameSet = walkFrameSet;
-        this.attackFrames = attackFrames;
-        this.phaseOffset = ((Math.floor(phaseOffset) % WARRIOR_WALK_FRAME_COUNT) + WARRIOR_WALK_FRAME_COUNT)
-            % WARRIOR_WALK_FRAME_COUNT;
-        this.frameIndex = 0;
+        this.attackFrameSet = attackFrameSet;
+        this.walkPhaseOffset = ((Math.floor(walkPhaseOffset) % WARRIOR_WALK_FRAME_COUNT)
+            + WARRIOR_WALK_FRAME_COUNT) % WARRIOR_WALK_FRAME_COUNT;
+        this.attackPhaseOffset = ((Math.floor(attackPhaseOffset) % 2) + 2) % 2;
+        this.walkFrameIndex = 0;
+        this.attackPhase = 0;
         this.frameTimer = 0;
         this.animationState = WarriorAnimationState.Idle;
         this.direction = WarriorDirection.Down;
@@ -56,7 +62,8 @@ export class WarriorAnimator extends Component {
         }
 
         this.animationState = WarriorAnimationState.Idle;
-        this.frameIndex = 0;
+        this.walkFrameIndex = 0;
+        this.attackPhase = 0;
         this.frameTimer = 0;
         this.applyFrame();
     }
@@ -70,26 +77,32 @@ export class WarriorAnimator extends Component {
         }
 
         this.animationState = WarriorAnimationState.Walk;
+        this.walkFrameIndex = 0;
+        this.attackPhase = 0;
         this.frameTimer = 0;
-        if (directionChanged) {
-            this.frameIndex = 0;
-        }
         this.applyFrame();
     }
 
-    public playAttack(): void {
+    // Attack 图的 4 列代表方向而不是时间，因此攻击动画要在“站姿帧”和“方向 Pose”之间切换。
+    public playAttack(direction: WarriorDirection): void {
+        this.direction = direction;
+
         if (this.animationState === WarriorAnimationState.Attack) {
+            this.frameTimer = 0;
+            this.attackPhase = 0;
+            this.applyFrame();
             return;
         }
 
         this.animationState = WarriorAnimationState.Attack;
-        this.frameIndex = 0;
+        this.walkFrameIndex = 0;
+        this.attackPhase = 0;
         this.frameTimer = 0;
         this.applyFrame();
     }
 
     update(dt: number): void {
-        if (!this.sprite || !this.walkFrameSet || !this.attackFrames) {
+        if (!this.sprite || !this.walkFrameSet || !this.attackFrameSet) {
             return;
         }
 
@@ -97,35 +110,40 @@ export class WarriorAnimator extends Component {
             return;
         }
 
-        const frameDuration = this.animationState === WarriorAnimationState.Attack
-            ? this.attackFrameDuration
-            : this.walkFrameDuration;
-        const frameCount = this.animationState === WarriorAnimationState.Attack
-            ? WARRIOR_ATTACK_FRAME_COUNT
-            : WARRIOR_WALK_FRAME_COUNT;
+        if (this.animationState === WarriorAnimationState.Attack) {
+            this.frameTimer += dt;
+            while (this.frameTimer >= this.attackFrameDuration) {
+                this.frameTimer -= this.attackFrameDuration;
+                this.attackPhase = (this.attackPhase + 1) % 2;
+                this.applyFrame();
+            }
+            return;
+        }
 
         this.frameTimer += dt;
-        while (this.frameTimer >= frameDuration) {
-            this.frameTimer -= frameDuration;
-            this.frameIndex = (this.frameIndex + 1) % frameCount;
+        while (this.frameTimer >= this.walkFrameDuration) {
+            this.frameTimer -= this.walkFrameDuration;
+            this.walkFrameIndex = (this.walkFrameIndex + 1) % WARRIOR_WALK_FRAME_COUNT;
             this.applyFrame();
         }
     }
 
     private applyFrame(): void {
-        if (!this.sprite || !this.walkFrameSet || !this.attackFrames) {
+        if (!this.sprite || !this.walkFrameSet || !this.attackFrameSet) {
             return;
         }
 
         if (this.animationState === WarriorAnimationState.Attack) {
-            const displayIndex = (this.frameIndex + this.phaseOffset) % WARRIOR_ATTACK_FRAME_COUNT;
-            this.sprite.spriteFrame = this.attackFrames[displayIndex] ?? null;
+            const displayPhase = (this.attackPhase + this.attackPhaseOffset) % 2;
+            this.sprite.spriteFrame = displayPhase === 0
+                ? this.walkFrameSet[this.direction][0] ?? null
+                : this.attackFrameSet[this.direction] ?? null;
             return;
         }
 
         const walkFrames = this.walkFrameSet[this.direction];
         const displayIndex = this.animationState === WarriorAnimationState.Walk
-            ? (this.frameIndex + this.phaseOffset) % WARRIOR_WALK_FRAME_COUNT
+            ? (this.walkFrameIndex + this.walkPhaseOffset) % WARRIOR_WALK_FRAME_COUNT
             : 0;
         this.sprite.spriteFrame = walkFrames[displayIndex] ?? null;
     }

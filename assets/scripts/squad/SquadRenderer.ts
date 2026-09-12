@@ -20,9 +20,9 @@ import { WarriorAnimator } from './WarriorAnimator';
 import {
     createWarriorAttackFrame,
     createWarriorFrame,
+    type WarriorAttackFrameSet,
     WarriorDirection,
     type WarriorFrameSet,
-    WARRIOR_ATTACK_FRAME_COUNT,
     WARRIOR_FRAME_SIZE,
     WARRIOR_WALK_FRAME_COUNT,
 } from './WarriorSpriteConfig';
@@ -35,6 +35,7 @@ const FORMATION_OFFSETS = [
 ] as const;
 
 const PHASE_OFFSETS = [0, 2, 1, 3] as const;
+const ATTACK_PHASE_OFFSETS = [0, 1, 1, 0] as const;
 
 export class SquadRenderer {
     private readonly frameCache = new Map<string, SpriteFrame>();
@@ -58,7 +59,7 @@ export class SquadRenderer {
         this.clear();
 
         const walkFrameSet = this.getOrCreateWalkFrameSet();
-        const attackFrames = this.getOrCreateAttackFrames();
+        const attackFrameSet = this.getOrCreateAttackFrameSet();
         const worldObjectById = new Map<string, WorldObjectData>(
             STATIC_WORLD_OBJECTS.map((objectData) => [objectData.id, objectData]),
         );
@@ -114,7 +115,13 @@ export class SquadRenderer {
                 sprite.sizeMode = Sprite.SizeMode.CUSTOM;
 
                 const animator = warriorNode.addComponent(WarriorAnimator);
-                animator.setup(sprite, walkFrameSet, attackFrames, PHASE_OFFSETS[i]);
+                animator.setup(
+                    sprite,
+                    walkFrameSet,
+                    attackFrameSet,
+                    PHASE_OFFSETS[i],
+                    ATTACK_PHASE_OFFSETS[i],
+                );
                 warriors.push(animator);
             }
 
@@ -193,21 +200,25 @@ export class SquadRenderer {
         return frames;
     }
 
-    private getOrCreateAttackFrames(): SpriteFrame[] {
-        const frames: SpriteFrame[] = [];
-        for (let frameIndex = 0; frameIndex < WARRIOR_ATTACK_FRAME_COUNT; frameIndex += 1) {
-            const key = `attack_${frameIndex}`;
-            const cached = this.frameCache.get(key);
-            if (cached) {
-                frames.push(cached);
-                continue;
-            }
+    // Attack 图的列语义已经改成“方向 Pose”，这里缓存时也按方向命名，避免重新误读。
+    private getOrCreateAttackFrameSet(): WarriorAttackFrameSet {
+        return {
+            [WarriorDirection.Down]: this.getAttackFrame(WarriorDirection.Down),
+            [WarriorDirection.Up]: this.getAttackFrame(WarriorDirection.Up),
+            [WarriorDirection.Left]: this.getAttackFrame(WarriorDirection.Left),
+            [WarriorDirection.Right]: this.getAttackFrame(WarriorDirection.Right),
+        };
+    }
 
-            const frame = createWarriorAttackFrame(this.warriorAttackTexture, frameIndex);
-            this.frameCache.set(key, frame);
-            frames.push(frame);
+    private getAttackFrame(direction: WarriorDirection): SpriteFrame {
+        const key = `attack_dir_${direction}`;
+        const cached = this.frameCache.get(key);
+        if (cached) {
+            return cached;
         }
 
-        return frames;
+        const frame = createWarriorAttackFrame(this.warriorAttackTexture, direction);
+        this.frameCache.set(key, frame);
+        return frame;
     }
 }

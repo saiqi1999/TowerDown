@@ -3,6 +3,7 @@ import { gridPointToWorld } from '../grid/GridTransform';
 import { type GridCell, type GridPoint } from '../navigation/NavigationTypes';
 import { WarriorAnimator } from './WarriorAnimator';
 import { WarriorDirection } from './WarriorSpriteConfig';
+import { resolveWarriorDirection } from './WarriorDirectionUtils';
 
 const { ccclass } = _decorator;
 
@@ -49,6 +50,10 @@ export class SquadMotor extends Component {
         };
     }
 
+    public getFacingDirection(): WarriorDirection {
+        return this.lastDirection;
+    }
+
     public setWaypoints(waypoints: GridPoint[]): void {
         this.waypoints = waypoints.map((waypoint) => ({
             x: waypoint.x,
@@ -63,7 +68,12 @@ export class SquadMotor extends Component {
             return;
         }
 
-        const direction = this.resolveDirectionTo(this.waypoints[0]);
+        // 历史上 Walk 和 Attack 曾各自维护方向判断，后续素材语义一变就容易走散。
+        const direction = resolveWarriorDirection(
+            this.waypoints[0].x - this.currentGridPoint.x,
+            this.waypoints[0].y - this.currentGridPoint.y,
+            this.lastDirection,
+        );
         this.lastDirection = direction;
         this.playWalk(direction);
     }
@@ -108,7 +118,7 @@ export class SquadMotor extends Component {
             return;
         }
 
-        const direction = this.resolveDirection(dx, dy);
+        const direction = resolveWarriorDirection(dx, dy, this.lastDirection);
         this.lastDirection = direction;
         this.playWalk(direction);
 
@@ -141,24 +151,14 @@ export class SquadMotor extends Component {
             return;
         }
 
-        const direction = this.resolveDirectionTo(this.waypoints[this.waypointIndex]);
+        const nextWaypoint = this.waypoints[this.waypointIndex];
+        const direction = resolveWarriorDirection(
+            nextWaypoint.x - this.currentGridPoint.x,
+            nextWaypoint.y - this.currentGridPoint.y,
+            this.lastDirection,
+        );
         this.lastDirection = direction;
         this.playWalk(direction);
-    }
-
-    private resolveDirectionTo(target: GridPoint): WarriorDirection {
-        return this.resolveDirection(
-            target.x - this.currentGridPoint.x,
-            target.y - this.currentGridPoint.y,
-        );
-    }
-
-    private resolveDirection(dx: number, dy: number): WarriorDirection {
-        if (Math.abs(dx) > Math.abs(dy)) {
-            return dx < 0 ? WarriorDirection.Left : WarriorDirection.Right;
-        }
-
-        return dy < 0 ? WarriorDirection.Up : WarriorDirection.Down;
     }
 
     private playWalk(direction: WarriorDirection): void {

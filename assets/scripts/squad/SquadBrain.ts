@@ -1,9 +1,12 @@
 import { _decorator, Component, randomRange } from 'cc';
 import { type GridCell, type GridPoint } from '../navigation/NavigationTypes';
 import { WorldNavigator } from '../navigation/WorldNavigator';
+import { getWorldVisualDefinition } from '../world/WorldAtlasConfig';
 import { type WorldObjectData, WorldObjectKind } from '../world/WorldObjectTypes';
 import { WarriorAnimator } from './WarriorAnimator';
 import { type CommandResult } from './SquadTypes';
+import { type WarriorDirection } from './WarriorSpriteConfig';
+import { resolveWarriorDirection } from './WarriorDirectionUtils';
 import { SquadMotor } from './SquadMotor';
 
 const { ccclass } = _decorator;
@@ -40,7 +43,6 @@ export interface SquadBrainConfig {
 @ccclass('SquadBrain')
 export class SquadBrain extends Component {
     private squadId = '';
-    private homeObjectId = '';
     private state = SquadBrainState.HomeIdle;
     private currentTargetId: string | null = null;
     private idleTimer = 0;
@@ -54,7 +56,6 @@ export class SquadBrain extends Component {
 
     public setup(config: SquadBrainConfig): void {
         this.squadId = config.squadId;
-        this.homeObjectId = config.homeObjectId;
         this.motor = config.motor;
         this.navigator = config.navigator;
         this.worldObjectById = config.worldObjectById;
@@ -140,9 +141,15 @@ export class SquadBrain extends Component {
             break;
         case SquadBrainState.MoveToTarget:
             if (this.motor.consumeArrived()) {
+                const attackDirection = this.resolveAttackDirection();
+                if (!attackDirection) {
+                    this.clearCommandAndReturnHome();
+                    break;
+                }
+
                 this.state = SquadBrainState.AttackResource;
                 // Phase 2 到达资源后只进入攻击演出，不做伤害或采集结算。
-                this.playAttack();
+                this.playAttack(attackDirection);
             }
             break;
         case SquadBrainState.ReturnHome:
@@ -196,9 +203,43 @@ export class SquadBrain extends Component {
         this.motor.stop();
     }
 
-    private playAttack(): void {
+    // 资源中心与 Squad 实时位置的相对关系决定攻击朝向，避免再把素材列顺序误当时间帧。
+    private resolveAttackDirection(): WarriorDirection | null {
+        const target = this.getCurrentTarget();
+        if (!target) {
+            console.warn(
+                `[SquadBrain] ${this.squadId} lost current target before entering attack.`,
+            );
+            return null;
+        }
+
+        const visual = getWorldVisualDefinition(target.visualId);
+        const targetCenterX = target.gridX + visual.w / 2;
+        const targetCenterY = target.gridY + visual.h / 2;
+        const squadPosition = this.motor.getGridPosition();
+        const dx = targetCenterX - squadPosition.x;
+        const dy = targetCenterY - squadPosition.y;
+        return resolveWarriorDirection(dx, dy, this.motor.getFacingDirection());
+    }
+
+    private getCurrentTarget(): WorldObjectData | null {
+        if (!this.currentTargetId) {
+            return null;
+        }
+
+        const target = this.worldObjectById.get(this.currentTargetId) ?? null;
+        if (!target) {
+            console.warn(
+                `[SquadBrain] ${this.squadId} current target disappeared: ${this.currentTargetId}`,
+            );
+        }
+
+        return target;
+    }
+
+    private playAttack(direction: WarriorDirection): void {
         for (const warrior of this.warriors) {
-            warrior.playAttack();
+            warrior.playAttack(direction);
         }
     }
 
