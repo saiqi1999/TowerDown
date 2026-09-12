@@ -261,14 +261,14 @@ export class SquadEngagementController extends Component {
     private getPreferredSidesForMultiCell(approachSide: InteractionSide): InteractionSide[] {
         switch (approachSide) {
         case InteractionSide.Top:
-            return [InteractionSide.Top, InteractionSide.Left, InteractionSide.Right];
+            return [InteractionSide.Top, InteractionSide.Left, InteractionSide.Right, InteractionSide.Bottom];
         case InteractionSide.Bottom:
-            return [InteractionSide.Bottom, InteractionSide.Left, InteractionSide.Right];
+            return [InteractionSide.Bottom, InteractionSide.Left, InteractionSide.Right, InteractionSide.Top];
         case InteractionSide.Left:
-            return [InteractionSide.Left, InteractionSide.Top, InteractionSide.Bottom];
+            return [InteractionSide.Left, InteractionSide.Top, InteractionSide.Bottom, InteractionSide.Right];
         case InteractionSide.Right:
         default:
-            return [InteractionSide.Right, InteractionSide.Top, InteractionSide.Bottom];
+            return [InteractionSide.Right, InteractionSide.Top, InteractionSide.Bottom, InteractionSide.Left];
         }
     }
 
