@@ -142,7 +142,7 @@ export class SquadBrain extends Component {
         case SquadBrainState.MoveToTarget:
             if (this.motor.consumeArrived()) {
                 const attackDirection = this.resolveAttackDirection();
-                if (!attackDirection) {
+                if (attackDirection === null) {
                     this.clearCommandAndReturnHome();
                     break;
                 }
