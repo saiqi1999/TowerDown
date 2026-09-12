@@ -8,6 +8,7 @@ import { SquadMotor } from './SquadMotor';
 
 const { ccclass } = _decorator;
 
+// Brain 只负责“决策现在该做什么”，真正的位置写入统一交给 SquadMotor。
 export enum SquadBrainState {
     HomeIdle = 0,
     Wander = 1,
@@ -28,6 +29,7 @@ export interface SquadBrainConfig {
     squadId: string;
     homeObjectId: string;
     motor: SquadMotor;
+    // Navigator 在启动阶段注入，避免 Brain 自己持有地图构建职责。
     navigator: WorldNavigator;
     worldObjectById: ReadonlyMap<string, WorldObjectData>;
     warriors: WarriorAnimator[];
@@ -60,6 +62,7 @@ export class SquadBrain extends Component {
         this.homeRestCell = config.homeRestCell;
         this.homeBounds = config.homeBounds;
         this.initialized = true;
+        // 出生后先进入返家附近的待机逻辑，保持 Phase 1 的“基地门口活动”体验。
         this.enterHomeIdle();
     }
 
@@ -76,6 +79,7 @@ export class SquadBrain extends Component {
             return this.issueReturnHome(target);
         }
 
+        // 先算出新路径，再切换 currentTarget/state，避免不可达目标覆盖旧命令。
         const pathResult = this.navigator.findPathToObject(
             this.motor.getGridPosition(),
             target,
@@ -95,6 +99,7 @@ export class SquadBrain extends Component {
 
     public clearCommandAndReturnHome(): void {
         this.currentTargetId = null;
+        // 返家永远从“当前实时位置”开始算，保证移动途中取消命令也能自然折返。
         const path = this.navigator.findPathToCell(
             this.motor.getGridPosition(),
             this.homeRestCell,
@@ -105,6 +110,7 @@ export class SquadBrain extends Component {
             console.warn(
                 `[SquadBrain] ${this.squadId} failed to find return-home path.`,
             );
+            // 回家失败时降级回 HomeIdle，避免行为卡死在 ReturnHome。
             this.enterHomeIdle();
             return;
         }
@@ -122,6 +128,7 @@ export class SquadBrain extends Component {
             return;
         }
 
+        // Brain 只在状态切换点消费 Motor 的“到达事件”，不直接参与逐帧位移。
         switch (this.state) {
         case SquadBrainState.HomeIdle:
             this.updateHomeIdle(dt);
@@ -134,6 +141,7 @@ export class SquadBrain extends Component {
         case SquadBrainState.MoveToTarget:
             if (this.motor.consumeArrived()) {
                 this.state = SquadBrainState.AttackResource;
+                // Phase 2 到达资源后只进入攻击演出，不做伤害或采集结算。
                 this.playAttack();
             }
             break;
@@ -150,6 +158,7 @@ export class SquadBrain extends Component {
     }
 
     private issueReturnHome(target: WorldObjectData): CommandResult {
+        // Base 点击语义被定义为“返家”，而不是把 Base 当作普通攻击目标。
         const path = this.navigator.findPathToCell(
             this.motor.getGridPosition(),
             this.homeRestCell,
@@ -173,6 +182,7 @@ export class SquadBrain extends Component {
             return;
         }
 
+        // 待机结束后只在基地前方的小范围内巡逻，延续出生点附近活动的感觉。
         const target = this.chooseRandomWanderTarget();
         this.state = SquadBrainState.Wander;
         this.motor.setWaypoints([target]);
@@ -182,6 +192,7 @@ export class SquadBrain extends Component {
         this.state = SquadBrainState.HomeIdle;
         this.currentTargetId = null;
         this.idleTimer = randomRange(0.8, 2.5);
+        // 进入 Idle 时立即停掉旧路径，确保 Attack/Move/ReturnHome 都能被完整打断。
         this.motor.stop();
     }
 
@@ -205,11 +216,13 @@ export class SquadBrain extends Component {
             };
             const dx = candidate.x - current.x;
             const dy = candidate.y - current.y;
+            // 过滤掉几乎原地不动的点，避免待机结束后看起来像没触发 Wander。
             if (Math.sqrt(dx * dx + dy * dy) > 0.2) {
                 return candidate;
             }
         }
 
+        // 多次采样都太近时退化为任意合法点，优先保证行为继续推进。
         return {
             x: randomRange(minX, maxX),
             y: randomRange(minY, maxY),
