@@ -1,0 +1,3 @@
+export const GRID_SOURCE_SIZE = 16;
+export const GRID_RENDER_SCALE = 2;
+export const GRID_RENDER_SIZE = GRID_SOURCE_SIZE * GRID_RENDER_SCALE;

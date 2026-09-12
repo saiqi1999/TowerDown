@@ -1,4 +1,5 @@
 import { TileVisual } from './MapTypes';
+import { GRID_RENDER_SIZE, GRID_SOURCE_SIZE } from '../grid/GridConfig';
 
 export interface AtlasCell {
     column: number;
@@ -12,8 +13,8 @@ export interface AtlasRect {
     height: number;
 }
 
-export const ATLAS_TILE_SIZE = 16;
-export const TILE_RENDER_SIZE = 32;
+export const ATLAS_TILE_SIZE = GRID_SOURCE_SIZE;
+export const TILE_RENDER_SIZE = GRID_RENDER_SIZE;
 export const TERRAIN_SPRITE_FRAME_UUID = 'd7fe297d-ca47-49aa-93d4-0c947fdf5ebc@f9941';
 export const TERRAIN_SPRITE_FRAME_FALLBACK_UUID = '165f2715-1733-4ccf-94bc-6cc30740bac2@f9941';
 
