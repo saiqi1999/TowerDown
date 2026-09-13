@@ -36,6 +36,19 @@ import { ResourceHudView } from '../ui/ResourceHudView';
 import { MonsterGroupRenderer } from '../monster/MonsterGroupRenderer';
 import { STATIC_MONSTER_GROUPS } from '../monster/StaticMonsterGroups';
 import { MonsterRuntimeRegistry } from '../monster/MonsterRuntimeRegistry';
+import { BuildingBlueprintInventory } from '../building/BuildingBlueprintInventory';
+import { BuildingRuntimeRegistry } from '../building/BuildingRuntimeRegistry';
+import { BuildingSpriteFrameFactory } from '../building/BuildingSpriteFrameFactory';
+import { BuildingRenderer } from '../building/BuildingRenderer';
+import { BuildingPlacementValidator } from '../building/BuildingPlacementValidator';
+import { BuildingPlacementService } from '../building/BuildingPlacementService';
+import { BuildingGhostView } from '../building/BuildingGhostView';
+import { BuildingPlacementTool } from '../building/BuildingPlacementTool';
+import { BuildToolController } from '../building/BuildToolController';
+import { BuildBarController } from '../building/BuildBarController';
+import { GridPointerProjector } from '../building/GridPointerProjector';
+import { WorldCellFlag, WorldCellGrid } from '../world/WorldCellGrid';
+import { getWorldVisualDefinition } from '../world/WorldAtlasConfig';
 
 const { ccclass, property } = _decorator;
 
@@ -76,6 +89,9 @@ export class MainMapController extends Component {
 
     @property(Texture2D)
     public slimeAttackTexture: Texture2D | null = null;
+
+    @property(Texture2D)
+    public buildBarTexture: Texture2D | null = null;
 
     private mapRenderer: MapRenderer | null = null;
     private worldObjectRenderer: WorldObjectRenderer | null = null;
@@ -167,6 +183,24 @@ export class MainMapController extends Component {
         const feedbackRoot = this.getOrCreateChild(mapRoot, 'WorldFeedbackRoot');
         const monsterRoot = this.getOrCreateChild(actorRoot, 'MonsterRoot');
         const damagePopupSpawner = new DamagePopupSpawner(feedbackRoot);
+        const worldCellGrid = new WorldCellGrid(
+            STATIC_MAP[0]?.length ?? 0,
+            STATIC_MAP.length,
+        );
+        for (const objectData of worldObjectRegistry.getAll()) {
+            const visual = getWorldVisualDefinition(objectData.visualId);
+            const cells = [];
+            for (let y = objectData.gridY; y < objectData.gridY + visual.h; y += 1) {
+                for (let x = objectData.gridX; x < objectData.gridX + visual.w; x += 1) {
+                    cells.push({ x, y });
+                }
+            }
+            worldCellGrid.claim(
+                objectData.id,
+                objectData.kind === 0 ? WorldCellFlag.Base : WorldCellFlag.Resource,
+                cells,
+            );
+        }
 
         this.mapRenderer = new MapRenderer(tileRoot, atlasSpriteFrame);
         this.mapRenderer.render(STATIC_MAP);
@@ -189,7 +223,7 @@ export class MainMapController extends Component {
             lifecycle,
             resourceHealthBarTexture,
         );
-        lifecycle.setup(worldObjectRegistry, this.worldObjectRenderer, navigationGrid);
+        lifecycle.setup(worldObjectRegistry, this.worldObjectRenderer, navigationGrid, worldCellGrid);
         this.worldObjectRenderer.render(
             worldObjectRegistry.getAll(),
             STATIC_MAP[0]?.length ?? 0,
@@ -264,6 +298,55 @@ export class MainMapController extends Component {
         const resourceHud = resourceHudNode.getComponent(ResourceHudView)
             ?? resourceHudNode.addComponent(ResourceHudView);
         resourceHud.setup(resourceInventory);
+
+        const buildingRoot = this.getOrCreateChild(worldObjectRoot, 'BuildingRoot');
+        const previewRoot = this.getOrCreateChild(worldObjectRoot, 'BuildPreviewRoot');
+        const buildToolNode = this.getOrCreateChild(mapRoot, 'BuildToolController');
+        const buildToolController = buildToolNode.getComponent(BuildToolController)
+            ?? buildToolNode.addComponent(BuildToolController);
+        const buildingFactory = new BuildingSpriteFrameFactory(buildingTexture);
+        const buildingRegistry = new BuildingRuntimeRegistry();
+        const buildingRenderer = new BuildingRenderer(
+            buildingRoot,
+            buildingFactory,
+            STATIC_MAP[0]?.length ?? 0,
+            STATIC_MAP.length,
+        );
+        const blueprintInventory = new BuildingBlueprintInventory();
+        const validator = new BuildingPlacementValidator(STATIC_MAP, worldCellGrid, resourceInventory);
+        const service = new BuildingPlacementService(
+            validator,
+            resourceInventory,
+            worldCellGrid,
+            navigationGrid,
+            buildingRenderer,
+            buildingRegistry,
+        );
+        const ghost = new BuildingGhostView(
+            previewRoot,
+            buildingFactory,
+            STATIC_MAP[0]?.length ?? 0,
+            STATIC_MAP.length,
+        );
+        const placementTool = new BuildingPlacementTool(
+            new GridPointerProjector(mapRoot, STATIC_MAP[0]?.length ?? 0, STATIC_MAP.length),
+            validator,
+            service,
+            ghost,
+        );
+        buildToolController.setup(placementTool);
+        commandController.setInputBlockedPredicate(() => buildToolController.isActive());
+        const buildBar = new BuildBarController(
+            this.getOrCreateChild(hudRoot, 'BuildBar'),
+            blueprintInventory,
+            buildingFactory,
+            buildToolController,
+            this.buildBarTexture,
+        );
+        buildBar.setup();
+        for (const definitionId of ['storage_pot_01', 'supply_sack_01', 'ritual_tent_01', 'kiln_01']) {
+            blueprintInventory.unlock(definitionId);
+        }
     }
 
     private beginGuardCombat(

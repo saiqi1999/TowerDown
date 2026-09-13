@@ -1,4 +1,5 @@
 import { ResourceType } from '../world/WorldObjectTypes';
+import { type ResourceCost } from '../building/BuildingTypes';
 
 export interface ResourceInventorySnapshot {
     wood: number;
@@ -45,6 +46,43 @@ export class ResourceInventory {
             this.notify();
         }
         return true;
+    }
+
+    public canAfford(cost: ResourceCost): boolean {
+        for (const key of Object.keys(cost)) {
+            const type = Number(key) as ResourceType;
+            const required = cost[type] ?? 0;
+            if (required < 0 || this.get(type) < required) return false;
+        }
+        return true;
+    }
+
+    public trySpendCost(cost: ResourceCost): boolean {
+        if (!this.canAfford(cost)) return false;
+        let changed = false;
+        for (const key of Object.keys(cost)) {
+            const type = Number(key) as ResourceType;
+            const amount = cost[type] ?? 0;
+            if (amount > 0) {
+                this.amounts.set(type, this.get(type) - amount);
+                changed = true;
+            }
+        }
+        if (changed) this.notify();
+        return true;
+    }
+
+    public addCost(cost: ResourceCost): void {
+        let changed = false;
+        for (const key of Object.keys(cost)) {
+            const type = Number(key) as ResourceType;
+            const amount = cost[type] ?? 0;
+            if (amount > 0) {
+                this.amounts.set(type, this.get(type) + amount);
+                changed = true;
+            }
+        }
+        if (changed) this.notify();
     }
 
     public subscribe(listener: ResourceInventoryListener): () => void {

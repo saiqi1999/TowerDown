@@ -31,6 +31,11 @@ export class WorldCommandController extends Component {
     private flagFrames: SpriteFrame[] = [];
     private readonly targetBySquad = new Map<string, string>();
     private readonly flagBySquad = new Map<string, TargetFlagView>();
+    private inputBlockedPredicate: (() => boolean) | null = null;
+
+    public setInputBlockedPredicate(predicate: (() => boolean) | null): void {
+        this.inputBlockedPredicate = predicate;
+    }
 
     public setup(config: WorldCommandControllerConfig): void {
         this.worldObjectRoot = config.worldObjectRoot;
@@ -62,6 +67,9 @@ export class WorldCommandController extends Component {
     }
 
     private onWorldObjectClicked(objectId: string): void {
+        if (this.inputBlockedPredicate?.()) {
+            return;
+        }
         const handle = this.squadHandles.get(this.activeSquadId);
         if (!handle) {
             console.warn(`[WorldCommandController] active squad missing: ${this.activeSquadId}`);

@@ -1,0 +1,20 @@
+/**
+ * Why this file exists:
+ * 已落地建筑是动态运行时实体，需要脱离 Scene Tree 被效果、拆除和存档系统查询。
+ *
+ * Ownership boundary:
+ * 本文件拥有建筑实例数据与对应 Node 的索引。
+ *
+ * This file deliberately does NOT:
+ * 不验证放置、不扣资源、不创建 Sprite，也不执行建筑效果。
+ */
+import { type Node } from 'cc';
+import { type BuildingInstanceData } from './BuildingTypes';
+export interface BuildingRuntimeEntry { data: BuildingInstanceData; node: Node; }
+export class BuildingRuntimeRegistry {
+    private readonly entries = new Map<string, BuildingRuntimeEntry>();
+    public add(data: BuildingInstanceData, node: Node): void { if (this.entries.has(data.id)) throw new Error(`[BuildingRuntimeRegistry] duplicate id: ${data.id}`); this.entries.set(data.id, { data, node }); }
+    public get(id: string): BuildingRuntimeEntry | null { return this.entries.get(id) ?? null; }
+    public getAll(): readonly BuildingRuntimeEntry[] { return [...this.entries.values()]; }
+    public remove(id: string): BuildingRuntimeEntry | null { const entry = this.entries.get(id) ?? null; this.entries.delete(id); return entry; }
+}
