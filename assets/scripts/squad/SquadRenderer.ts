@@ -30,6 +30,7 @@ import {
     type SquadSpawnData,
 } from './SquadTypes';
 import { WarriorAnimator } from './WarriorAnimator';
+import { type MonsterRuntimeRegistry } from '../monster/MonsterRuntimeRegistry';
 import { WarriorMotor } from './WarriorMotor';
 import { WarriorAttackReceiver } from './WarriorAttackReceiver';
 import {
@@ -63,6 +64,7 @@ export class SquadRenderer {
         private readonly friendlyHealthBarTexture: Texture2D,
         private readonly hitFlashMaterial: Material,
         private readonly damagePopupSpawner: DamagePopupSpawner,
+        private readonly monsterRegistry?: MonsterRuntimeRegistry,
     ) {}
 
     public clear(): void {
@@ -111,6 +113,7 @@ export class SquadRenderer {
             const warriors: WarriorAnimator[] = [];
             const warriorMotors: WarriorMotor[] = [];
             const warriorCombatStats: CombatStats[] = [];
+            const warriorHealth: HealthComponent[] = [];
             for (let i = 0; i < squad.memberCount; i += 1) {
                 const warriorNode = new Node(`Warrior_${i}`);
                 warriorNode.setParent(squadNode);
@@ -138,10 +141,15 @@ export class SquadRenderer {
                 warriors.push(animator);
 
                 const stats = warriorNode.addComponent(CombatStats);
-                stats.setup({ attackDamage: SWORD_WARRIOR_ATTACK_DAMAGE });
+                stats.setup({
+                    attackDamage: SWORD_WARRIOR_ATTACK_DAMAGE,
+                    attackRangeCells: 0.85,
+                    preferredCombatDistanceCells: 0.75,
+                });
                 warriorCombatStats.push(stats);
                 const health = warriorNode.addComponent(HealthComponent);
                 health.setup(SWORD_WARRIOR_MAX_HEALTH);
+                warriorHealth.push(health);
                 const healthBar = warriorNode.addComponent(HealthBarView);
                 healthBar.setup({
                     health,
@@ -198,7 +206,7 @@ export class SquadRenderer {
                 mapWidth,
                 mapHeight,
             };
-            brain.setup({
+                brain.setup({
                 squadId: squad.id,
                 homeObjectId: squad.homeObjectId,
                 motor,
@@ -207,8 +215,9 @@ export class SquadRenderer {
                 worldObjectRegistry: this.worldObjectRegistry,
                 warriors,
                 homeRestCell,
-                homeBounds,
-            });
+                    homeBounds,
+                    monsterRegistry: this.monsterRegistry,
+                });
 
             handles.set(squad.id, {
                 id: squad.id,
@@ -216,6 +225,10 @@ export class SquadRenderer {
                 motor,
                 engagement,
                 brain,
+                warriorAnimators: warriors,
+                warriorMotors,
+                warriorStats: warriorCombatStats,
+                warriorHealth,
             });
         }
 

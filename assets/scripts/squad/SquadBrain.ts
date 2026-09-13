@@ -7,6 +7,7 @@ import { SquadEngagementController } from './SquadEngagementController';
 import { type CommandResult } from './SquadTypes';
 import { WarriorAnimator } from './WarriorAnimator';
 import { SquadMotor } from './SquadMotor';
+import { type MonsterRuntimeRegistry } from '../monster/MonsterRuntimeRegistry';
 
 const { ccclass } = _decorator;
 
@@ -40,6 +41,9 @@ export interface SquadBrainConfig {
     warriors: WarriorAnimator[];
     homeRestCell: GridCell;
     homeBounds: SquadHomeBounds;
+    monsterRegistry?: MonsterRuntimeRegistry;
+    onGuardEncounterRequested?: (squadId: string, guardedObjectId: string) => boolean;
+    onGuardRetreatRequested?: (squadId: string, guardedObjectId: string) => void;
 }
 
 @ccclass('SquadBrain')
@@ -59,6 +63,10 @@ export class SquadBrain extends Component {
     private homeRestCell!: GridCell;
     private homeBounds!: SquadHomeBounds;
     private initialized = false;
+    private monsterRegistry: MonsterRuntimeRegistry | null = null;
+    private onGuardEncounterRequested: ((squadId: string, guardedObjectId: string) => boolean) | null = null;
+    private guardEncounterRequested = false;
+    private onGuardRetreatRequested: ((squadId: string, guardedObjectId: string) => void) | null = null;
 
     public setup(config: SquadBrainConfig): void {
         this.squadId = config.squadId;
@@ -69,9 +77,24 @@ export class SquadBrain extends Component {
         this.warriors = config.warriors;
         this.homeRestCell = config.homeRestCell;
         this.homeBounds = config.homeBounds;
+        this.monsterRegistry = config.monsterRegistry ?? null;
+        this.onGuardEncounterRequested = config.onGuardEncounterRequested ?? null;
+        this.onGuardRetreatRequested = config.onGuardRetreatRequested ?? null;
+        this.guardEncounterRequested = false;
         this.initialized = true;
         // 出生后先进入返家附近的待机逻辑，保持基地门口活动的基本行为。
         this.enterHomeIdle();
+    }
+
+    public setGuardEncounterRequester(
+        requester: (squadId: string, guardedObjectId: string) => boolean,
+    ): void {
+        this.onGuardEncounterRequested = requester;
+    }
+    public setGuardRetreatRequester(
+        requester: (squadId: string, guardedObjectId: string) => void,
+    ): void {
+        this.onGuardRetreatRequested = requester;
     }
 
     public issueTarget(targetId: string): CommandResult {
@@ -110,6 +133,7 @@ export class SquadBrain extends Component {
         this.pendingTargetId = null;
         this.pendingReturnHome = false;
         this.activeTargetId = target.id;
+        this.guardEncounterRequested = false;
         this.state = SquadBrainState.MoveToTarget;
         this.motor.setPath(pathResult.path);
         return { accepted: true };
@@ -132,6 +156,10 @@ export class SquadBrain extends Component {
         // Flag 需要跟随“最新已接受命令”而不是旧的实际交互目标，否则 reform 期间会提前消失。
         return this.commandTargetId;
     }
+    public resumeTargetAfterGuardVictory(): void {
+        if (!this.activeTargetId || this.state !== SquadBrainState.EngageTarget) return;
+        this.beginTargetEngagement();
+    }
 
     update(dt: number): void {
         if (!this.initialized) {
@@ -148,6 +176,9 @@ export class SquadBrain extends Component {
             }
             break;
         case SquadBrainState.MoveToTarget:
+            if (this.tryActivateGuard()) {
+                break;
+            }
             if (this.motor.consumeArrived()) {
                 this.beginTargetEngagement();
             }
@@ -225,7 +256,31 @@ export class SquadBrain extends Component {
         this.state = SquadBrainState.EngageTarget;
     }
 
+    private tryActivateGuard(): boolean {
+        if (this.guardEncounterRequested || !this.activeTargetId || !this.monsterRegistry) {
+            return false;
+        }
+        const guard = this.monsterRegistry.getByGuardedObject(this.activeTargetId);
+        if (!guard || !guard.canEngage(this.motor.getGridPosition())) {
+            return false;
+        }
+        this.motor.stop();
+        this.guardEncounterRequested = true;
+        const accepted = this.onGuardEncounterRequested?.(this.squadId, this.activeTargetId) ?? false;
+        if (!accepted) {
+            this.guardEncounterRequested = false;
+            console.warn(`[SquadBrain] guard encounter request rejected: ${this.activeTargetId}`);
+            return false;
+        }
+        this.state = SquadBrainState.EngageTarget;
+        return true;
+    }
+
     private beginReform(): void {
+        if (this.guardEncounterRequested && this.activeTargetId) {
+            this.onGuardRetreatRequested?.(this.squadId, this.activeTargetId);
+            this.guardEncounterRequested = false;
+        }
         this.motor.stop();
 
         if (this.engagement.isInactive()) {

@@ -3,6 +3,10 @@ import { type GridPoint } from '../navigation/NavigationTypes';
 import { type SquadBrain } from './SquadBrain';
 import { type SquadEngagementController } from './SquadEngagementController';
 import { type SquadMotor } from './SquadMotor';
+import { type WarriorAnimator } from './WarriorAnimator';
+import { type WarriorMotor } from './WarriorMotor';
+import { type CombatStats } from '../combat/CombatStats';
+import { type HealthComponent } from '../combat/HealthComponent';
 
 export enum WarriorVisualId {
     SwordWarrior = 0,
@@ -19,6 +23,10 @@ export interface SquadRuntimeHandle {
     motor: SquadMotor;
     engagement: SquadEngagementController;
     brain: SquadBrain;
+    warriorAnimators: WarriorAnimator[];
+    warriorMotors: WarriorMotor[];
+    warriorStats: CombatStats[];
+    warriorHealth: HealthComponent[];
 }
 
 export interface SquadSpawnData {

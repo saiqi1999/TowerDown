@@ -14,6 +14,10 @@ import { createMonsterFrame, MonsterDirection, MONSTER_FRAME_COUNT } from './Mon
 import { type MonsterFrameSet } from './MonsterAnimator';
 import { type MonsterGroupData } from './MonsterTypes';
 import { MonsterAttackReceiver } from './MonsterAttackReceiver';
+import { MonsterRuntimeRegistry } from './MonsterRuntimeRegistry';
+import { MonsterGroupController } from './MonsterGroupController';
+import { MonsterMotor } from './MonsterMotor';
+import { MonsterCombatantAdapter } from './MonsterCombatantAdapter';
 
 export class MonsterGroupRenderer {
     private readonly frames = new Map<string, ReturnType<typeof createMonsterFrame>>();
@@ -26,11 +30,12 @@ export class MonsterGroupRenderer {
         private readonly hub: CombatEventHub,
         private readonly popup: DamagePopupSpawner,
     ) {}
-    public render(groups: readonly MonsterGroupData[], objects: readonly WorldObjectData[], mapWidth: number, mapHeight: number): void {
+    public render(groups: readonly MonsterGroupData[], objects: readonly WorldObjectData[], mapWidth: number, mapHeight: number, registry?: MonsterRuntimeRegistry): void {
         this.root.removeAllChildren();
         for (const group of groups) {
             const guarded = objects.find((object) => object.id === group.guardedObjectId);
             if (!guarded) throw new Error(`[MonsterGroupRenderer] guarded object missing: ${group.guardedObjectId}`);
+            const controller = registry?.register(group, { x: guarded.gridX + 0.5, y: guarded.gridY + 0.5 });
             const groupNode = new Node(`MonsterGroup_${group.id}`); groupNode.setParent(this.root); groupNode.layer = this.root.layer;
             const definition = { w: 1, h: 1 };
             for (const member of group.members) {
@@ -54,6 +59,19 @@ export class MonsterGroupRenderer {
                 const healthBar = node.addComponent(HealthBarView); healthBar.setup({ health, texture: this.healthTexture, localOffsetY: 11 });
                 const flash = node.addComponent(HitFlashView); flash.setup({ sprite, baseMaterial: this.flashMaterial });
                 node.addComponent(MonsterAttackReceiver).setup(member.id, this.hub, health, flash, this.popup);
+                const motor = node.addComponent(MonsterMotor);
+                const position = { x: guarded.gridX + 0.5 + member.guardOffset.x, y: guarded.gridY + 0.5 + member.guardOffset.y };
+                motor.setup(
+                    animator,
+                    position,
+                    config.moveSpeedCellsPerSecond,
+                    mapWidth,
+                    mapHeight,
+                );
+                if (registry && controller) {
+                    const adapter = new MonsterCombatantAdapter(member.id, health, stats, position, motor);
+                    registry.registerMember(adapter);
+                }
             }
         }
     }
