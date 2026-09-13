@@ -77,10 +77,21 @@ export class HealthComponent extends Component {
         return healed;
     }
 
-    public subscribe(listener: HealthChangedListener): () => void {
+    public subscribe(
+        listener: HealthChangedListener,
+    ): () => void {
         this.listeners.add(listener);
-        listener(this.currentHealth, this.maxHealth, null);
-        return () => this.listeners.delete(listener);
+
+        const listeners = this.listeners;
+
+        listener(
+            this.currentHealth,
+            this.maxHealth,
+            null,
+        );
+
+        return () =>
+            listeners.delete(listener);
     }
 
     private notify(result: DamageResult | null): void {
