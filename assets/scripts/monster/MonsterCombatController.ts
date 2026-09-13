@@ -71,14 +71,38 @@ export class MonsterCombatController extends Component implements CombatUnitRef 
         const current = this.getWorldGridPosition();
         const currentDistance = distance(current, targetPosition);
         const range = this.stats?.getAttackRangeCells() ?? 0.85;
-        if (currentDistance <= range) {
-            this.motor?.stop();
-            this.animator?.playAttack(resolveFacing(current, targetPosition) as unknown as MonsterDirection);
-            this.state = MonsterCombatState.Attacking;
-        } else if (this.state !== MonsterCombatState.Attacking || currentDistance > range + 0.1) {
-            this.motor?.moveTo(moveTargetAtDistance(current, targetPosition, this.stats?.getPreferredCombatDistanceCells() ?? 0.75));
-            this.state = MonsterCombatState.Approaching;
-        }
+
+const attackExitRange = range + 0.1;
+
+const shouldAttack =
+    this.state === MonsterCombatState.Attacking
+        ? currentDistance <= attackExitRange
+        : currentDistance <= range;
+
+if (shouldAttack) {
+    const direction =
+        resolveFacing(
+            current,
+            targetPosition,
+        ) as unknown as MonsterDirection;
+
+    if (this.state !== MonsterCombatState.Attacking) {
+        this.motor?.stop();
+        this.state = MonsterCombatState.Attacking;
+    }
+
+    this.animator?.playAttack(direction);
+    return;
+}
+
+const desired = moveTargetAtDistance(
+    current,
+    targetPosition,
+    this.stats?.getPreferredCombatDistanceCells() ?? 0.75,
+);
+
+this.motor?.moveTo(desired);
+this.state = MonsterCombatState.Approaching;
         void dt;
     }
     public exitCombat(): void { this.releaseTarget(); this.motor?.stop(); this.animator?.playIdle(); this.state = MonsterCombatState.GuardIdle; this.group = null; }
