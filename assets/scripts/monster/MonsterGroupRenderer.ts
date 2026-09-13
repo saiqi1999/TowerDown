@@ -76,9 +76,9 @@ export class MonsterGroupRenderer {
                     preferredCombatDistanceCells: config.preferredCombatDistanceCells,
                 });
                 const health = node.addComponent(HealthComponent); health.setup(config.maxHealth);
-                health.subscribe((_current, _max, result) => {
-                    if (result?.becameDepleted) animator.playDead();
-                });
+                // health.subscribe((_current, _max, result) => {
+                //     if (result?.becameDepleted) animator.playDead();
+                // });
                 const healthBar = node.addComponent(HealthBarView); healthBar.setup({ health, texture: this.healthTexture, localOffsetY: 11 });
                 const flash = node.addComponent(HitFlashView); flash.setup({ sprite, baseMaterial: this.flashMaterial });
                 node.addComponent(MonsterAttackReceiver).setup(member.id, this.hub, health, flash, this.popup);

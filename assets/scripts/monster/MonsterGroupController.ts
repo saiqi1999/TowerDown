@@ -39,9 +39,35 @@ export class MonsterGroupController extends Component {
     public claimMonsterTarget(monsterId: string, warriorId: string): void { this.monsterClaims.set(monsterId, warriorId); }
     public releaseWarriorTarget(warriorId: string, monsterId?: string): void { if (!monsterId || this.warriorClaims.get(warriorId) === monsterId) this.warriorClaims.delete(warriorId); }
     public releaseMonsterTarget(monsterId: string, warriorId?: string): void { if (!warriorId || this.monsterClaims.get(monsterId) === warriorId) this.monsterClaims.delete(monsterId); }
+    // public notifyMonsterDeath(monsterId: string): void {
+    //     this.monsterClaims.delete(monsterId); for (const [warriorId, claimed] of this.warriorClaims) if (claimed === monsterId) this.warriorClaims.delete(warriorId);
+    //     if (this.getAliveMonsters().length === 0) { this.state = MonsterGroupState.Defeated; for (const participant of this.participants.values()) participant.combat.onGuardDefeated(); }
+    // }
     public notifyMonsterDeath(monsterId: string): void {
-        this.monsterClaims.delete(monsterId); for (const [warriorId, claimed] of this.warriorClaims) if (claimed === monsterId) this.warriorClaims.delete(warriorId);
-        if (this.getAliveMonsters().length === 0) { this.state = MonsterGroupState.Defeated; for (const participant of this.participants.values()) participant.combat.onGuardDefeated(); }
+    // 清掉这只 Monster 自己的攻击目标
+    this.monsterClaims.delete(monsterId);
+
+    // 清掉所有 Warrior 对这只 Monster 的 claim
+    for (const [warriorId, claimedMonsterId] of this.warriorClaims) {
+        if (claimedMonsterId === monsterId) {
+            this.warriorClaims.delete(warriorId);
+        }
+    }
+
+    // 从当前存活 Monster 集合移除
+    this.monsters.delete(monsterId);
+
+    // 还有活怪，战斗继续
+    if (this.monsters.size > 0) {
+        return;
+    }
+
+    // 全灭
+    this.state = MonsterGroupState.Defeated;
+
+    for (const participant of this.participants.values()) {
+        participant.combat.onGuardDefeated();
+    }
     }
     public update(): void {
         if (this.state === MonsterGroupState.Defeated) return;

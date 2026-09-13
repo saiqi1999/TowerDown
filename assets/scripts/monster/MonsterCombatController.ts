@@ -105,9 +105,42 @@ this.motor?.moveTo(desired);
 this.state = MonsterCombatState.Approaching;
         void dt;
     }
+    private readonly MONSTER_REMOVE_DELAY_SECONDS = 0.12;
     public exitCombat(): void { this.releaseTarget(); this.motor?.stop(); this.animator?.playIdle(); this.state = MonsterCombatState.GuardIdle; this.group = null; }
     private releaseTarget(): void { if (this.target) this.group?.releaseMonsterTarget(this.id, this.target.id); this.target = null; }
-    private die(): void { this.releaseTarget(); this.motor?.stop(); this.animator?.playDead(); this.state = MonsterCombatState.Dead; this.group?.notifyMonsterDeath(this.id); }
+    // private die(): void { this.releaseTarget(); this.motor?.stop(); this.animator?.playDead(); this.state = MonsterCombatState.Dead; this.group?.notifyMonsterDeath(this.id); }
+    private die(): void {
+    // 防止重复死亡处理
+    if (this.state === MonsterCombatState.Dead) {
+        return;
+    }
+
+    // 1. 先立即进入逻辑死亡
+    this.state = MonsterCombatState.Dead;
+
+    // 2. 清掉正在攻击的目标
+    this.releaseTarget();
+
+    // 3. 停止移动
+    this.motor?.stop();
+
+    // 4. 显示死亡状态
+    this.animator?.playDead();
+
+    // 5. 立即通知 Group。
+    // 从这一刻开始，其他 Warrior 就不应该再把它视为活怪。
+    const group = this.group;
+    this.group = null;
+
+    group?.notifyMonsterDeath(this.id);
+
+    // 6. 视觉节点稍后移除
+    this.scheduleOnce(() => {
+        if (this.node.isValid) {
+            this.node.destroy();
+        }
+    }, this.MONSTER_REMOVE_DELAY_SECONDS);
+}
     private onImpact(): void {
         if (this.state !== MonsterCombatState.Attacking || !this.target || !this.hub || !this.stats) return;
         if (distance(this.getWorldGridPosition(), this.target.getWorldGridPosition()) <= this.stats.getAttackRangeCells() + 0.08) {
