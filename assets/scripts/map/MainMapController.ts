@@ -294,8 +294,7 @@ export class MainMapController extends Component {
         squadCombat.begin(encounter, warriorAdapters);
         for (const monster of this.monsterRegistry.getMembersForGroup(group)) {
             encounter.addCombatant(monster);
-            const target = warriorAdapters[0];
-            monster.setCombatTarget(target?.id ?? null);
+            monster.bindAttackImpact(encounter);
         }
         encounter.subscribeState((state) => {
             if (state === CombatEncounterState.Victory) {

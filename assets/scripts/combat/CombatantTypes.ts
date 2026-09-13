@@ -19,5 +19,6 @@ export interface CombatantAdapter {
 
 export interface CombatEncounterLike {
     getCombatant(id: string): CombatantAdapter | null;
+    getReservedCombatPosition(combatantId: string): GridPoint | null;
     emitDamage(attackerId: string, targetId: string, damage: number): ReturnType<CombatEncounter['emitDamage']>;
 }

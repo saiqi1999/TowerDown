@@ -3,6 +3,8 @@ import { type CombatantAdapter, type CombatEncounterLike } from '../combat/Comba
 import { HealthComponent } from '../combat/HealthComponent';
 import { type GridPoint } from '../navigation/NavigationTypes';
 import { type MonsterMotor } from './MonsterMotor';
+import { MonsterAnimator } from './MonsterAnimator';
+import { MonsterDirection } from './MonsterSpriteConfig';
 
 export class MonsterCombatantAdapter implements CombatantAdapter {
     public readonly team = 'monster' as const;
@@ -14,6 +16,7 @@ export class MonsterCombatantAdapter implements CombatantAdapter {
         private readonly stats: CombatStats,
         private position: GridPoint,
         private readonly motor: MonsterMotor,
+        private readonly animator: MonsterAnimator,
     ) {}
     public isAlive(): boolean { return !this.health.isDepleted(); }
     public getPosition(): GridPoint { return this.motor.getGridPosition(); }
@@ -27,10 +30,31 @@ export class MonsterCombatantAdapter implements CombatantAdapter {
         if (!this.targetId || !this.isAlive()) return;
         const target = encounter.getCombatant(this.targetId);
         if (!target || !target.isAlive()) return;
-        if (Math.hypot(target.getPosition().x - this.position.x, target.getPosition().y - this.position.y) > this.getAttackRangeCells()) return;
+        const current = this.getPosition();
+        const targetPosition = target.getPosition();
+        const distance = Math.hypot(targetPosition.x - current.x, targetPosition.y - current.y);
+        if (distance > this.getAttackRangeCells()) {
+            const position = encounter.getReservedCombatPosition(this.id);
+            if (position) this.motor.moveTo(position);
+            return;
+        }
+        const direction = Math.abs(targetPosition.x - current.x) >= Math.abs(targetPosition.y - current.y)
+            ? (targetPosition.x < current.x ? MonsterDirection.Left : MonsterDirection.Right)
+            : (targetPosition.y < current.y ? MonsterDirection.Up : MonsterDirection.Down);
         this.attackTimer -= dt;
         if (this.attackTimer > 0) return;
         this.attackTimer = 0.6;
-        encounter.emitDamage(this.id, this.targetId, this.getAttackDamage());
+        this.animator.playAttack(direction);
+    }
+
+    public bindAttackImpact(encounter: CombatEncounterLike): () => void {
+        return this.animator.subscribeAttackImpact(() => {
+            if (!this.targetId || !this.isAlive()) return;
+            const target = encounter.getCombatant(this.targetId);
+            if (!target || !target.isAlive()) return;
+            if (Math.hypot(target.getPosition().x - this.getPosition().x, target.getPosition().y - this.getPosition().y) <= this.getAttackRangeCells()) {
+                encounter.emitDamage(this.id, this.targetId, this.getAttackDamage());
+            }
+        });
     }
 }

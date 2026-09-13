@@ -10,8 +10,7 @@ import { gridRectToWorldCenter } from '../grid/GridTransform';
 import { type WorldObjectData } from '../world/WorldObjectTypes';
 import { getMonsterRuntimeDefinition } from './MonsterConfig';
 import { MonsterAnimator } from './MonsterAnimator';
-import { createMonsterFrame, MonsterDirection, MONSTER_FRAME_COUNT } from './MonsterSpriteConfig';
-import { type MonsterFrameSet } from './MonsterAnimator';
+import { createMonsterFrame, MonsterDirection, MONSTER_FRAME_COUNT, type MonsterFrameSet } from './MonsterSpriteConfig';
 import { type MonsterGroupData } from './MonsterTypes';
 import { MonsterAttackReceiver } from './MonsterAttackReceiver';
 import { MonsterRuntimeRegistry } from './MonsterRuntimeRegistry';
@@ -44,18 +43,40 @@ export class MonsterGroupRenderer {
                 node.setPosition(gridRectToWorldCenter(guarded.gridX + member.guardOffset.x, guarded.gridY + member.guardOffset.y, definition.w, definition.h, mapWidth, mapHeight));
                 node.addComponent(UITransform).setContentSize(16, 16);
                 const sprite = node.addComponent(Sprite); sprite.sizeMode = Sprite.SizeMode.CUSTOM;
-                const frames: MonsterFrameSet = {
+                const moveFrames: MonsterFrameSet = {
                     [MonsterDirection.Down]: this.getFrames(MonsterDirection.Down),
                     [MonsterDirection.Up]: this.getFrames(MonsterDirection.Up),
                     [MonsterDirection.Left]: this.getFrames(MonsterDirection.Left),
                     [MonsterDirection.Right]: this.getFrames(MonsterDirection.Right),
                 };
+                const attackFrames: MonsterFrameSet = {
+                    [MonsterDirection.Down]: this.getAttackFrames(MonsterDirection.Down),
+                    [MonsterDirection.Up]: this.getAttackFrames(MonsterDirection.Up),
+                    [MonsterDirection.Left]: this.getAttackFrames(MonsterDirection.Left),
+                    [MonsterDirection.Right]: this.getAttackFrames(MonsterDirection.Right),
+                };
                 const direction = member.guardOffset.x < 0 ? MonsterDirection.Left : member.guardOffset.x > 0 ? MonsterDirection.Right : MonsterDirection.Up;
                 const animator = node.addComponent(MonsterAnimator);
-                animator.setup(sprite, frames, getMonsterRuntimeDefinition(member.type).moveFrameDuration, direction);
-                const stats = node.addComponent(CombatStats); const config = getMonsterRuntimeDefinition(member.type);
-                stats.setup({ attackDamage: config.attackDamage });
+                const config = getMonsterRuntimeDefinition(member.type);
+                animator.setup(
+                    sprite,
+                    moveFrames,
+                    attackFrames,
+                    config.moveFrameDuration,
+                    config.attackFrameDuration,
+                    config.attackHitFrame,
+                    direction,
+                );
+                const stats = node.addComponent(CombatStats);
+                stats.setup({
+                    attackDamage: config.attackDamage,
+                    attackRangeCells: config.attackRangeCells,
+                    preferredCombatDistanceCells: config.preferredCombatDistanceCells,
+                });
                 const health = node.addComponent(HealthComponent); health.setup(config.maxHealth);
+                health.subscribe((_current, _max, result) => {
+                    if (result?.becameDepleted) animator.playDead();
+                });
                 const healthBar = node.addComponent(HealthBarView); healthBar.setup({ health, texture: this.healthTexture, localOffsetY: 11 });
                 const flash = node.addComponent(HitFlashView); flash.setup({ sprite, baseMaterial: this.flashMaterial });
                 node.addComponent(MonsterAttackReceiver).setup(member.id, this.hub, health, flash, this.popup);
@@ -69,7 +90,14 @@ export class MonsterGroupRenderer {
                     mapHeight,
                 );
                 if (registry && controller) {
-                    const adapter = new MonsterCombatantAdapter(member.id, health, stats, position, motor);
+                    const adapter = new MonsterCombatantAdapter(
+                        member.id,
+                        health,
+                        stats,
+                        position,
+                        motor,
+                        animator,
+                    );
                     registry.registerMember(adapter);
                 }
             }
@@ -81,6 +109,20 @@ export class MonsterGroupRenderer {
             const key = `${direction}:${index}`;
             let frame = this.frames.get(key);
             if (!frame) { frame = createMonsterFrame(this.moveTexture, direction, index); this.frames.set(key, frame); }
+            result.push(frame);
+        }
+        return result;
+    }
+
+    private getAttackFrames(direction: MonsterDirection) {
+        const result = [];
+        for (let index = 0; index < MONSTER_FRAME_COUNT; index += 1) {
+            const key = `attack:${direction}:${index}`;
+            let frame = this.frames.get(key);
+            if (!frame) {
+                frame = createMonsterFrame(this.attackTexture, direction, index);
+                this.frames.set(key, frame);
+            }
             result.push(frame);
         }
         return result;

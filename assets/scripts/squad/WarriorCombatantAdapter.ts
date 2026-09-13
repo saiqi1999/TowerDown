@@ -33,10 +33,7 @@ export class WarriorCombatantAdapter implements CombatantAdapter {
         const target = encounter.getCombatant(this.targetId);
         if (!target || !target.isAlive()) return;
         const distance = Math.hypot(target.getPosition().x - this.getPosition().x, target.getPosition().y - this.getPosition().y);
-        if (distance > this.getAttackRangeCells()) {
-            this.setCombatPosition(target.getPosition());
-            return;
-        }
+        if (distance > this.getAttackRangeCells()) return;
         this.attackTimer -= dt;
         if (this.attackTimer > 0) return;
         this.attackTimer = 0.55;
