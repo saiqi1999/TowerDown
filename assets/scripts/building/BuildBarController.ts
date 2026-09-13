@@ -31,11 +31,33 @@ export class BuildBarController {
     ) {}
 
     public setup(): void {
-        const transform = this.root.getComponent(UITransform) ?? this.root.addComponent(UITransform);
-        transform.setContentSize(BUILD_BAR_WIDTH, BUILD_BAR_HEIGHT);
+        // const transform = this.root.getComponent(UITransform) ?? this.root.addComponent(UITransform);
+        // transform.setContentSize(BUILD_BAR_WIDTH, BUILD_BAR_HEIGHT);
+        const transform =
+        this.root.getComponent(UITransform)
+        ?? this.root.addComponent(UITransform);
+
+        const background =
+            this.root.getComponent(Sprite)
+            ?? this.root.addComponent(Sprite);
+        
+        // 必须先进入 CUSTOM
+        background.sizeMode = Sprite.SizeMode.CUSTOM;
+        
+        if (this.backgroundTexture) {
+            const frame = new SpriteFrame();
+            frame.texture = this.backgroundTexture;
+            background.spriteFrame = frame;
+        }
+    
+        // 最后再设置最终尺寸，最保险
+        transform.setContentSize(
+        BUILD_BAR_WIDTH,
+        BUILD_BAR_HEIGHT,
+    );
         const hudHeight = this.root.parent?.getComponent(UITransform)?.contentSize.height ?? 720;
         this.root.setPosition(0, -hudHeight / 2 + BUILD_BAR_BOTTOM_MARGIN + BUILD_BAR_HEIGHT / 2, 0);
-        const background = this.root.getComponent(Sprite) ?? this.root.addComponent(Sprite);
+        // const background = this.root.getComponent(Sprite) ?? this.root.addComponent(Sprite);
         background.color = new Color(40, 45, 48, 220);
         if (this.backgroundTexture) {
             const frame = new SpriteFrame();
