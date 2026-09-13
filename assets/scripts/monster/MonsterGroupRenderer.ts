@@ -10,7 +10,8 @@ import { gridRectToWorldCenter } from '../grid/GridTransform';
 import { type WorldObjectData } from '../world/WorldObjectTypes';
 import { getMonsterRuntimeDefinition } from './MonsterConfig';
 import { MonsterAnimator } from './MonsterAnimator';
-import { createMonsterFrame, MonsterDirection, type MonsterFrameSet, MONSTER_FRAME_COUNT } from './MonsterSpriteConfig';
+import { createMonsterFrame, MonsterDirection, MONSTER_FRAME_COUNT } from './MonsterSpriteConfig';
+import { type MonsterFrameSet } from './MonsterAnimator';
 import { type MonsterGroupData } from './MonsterTypes';
 import { MonsterAttackReceiver } from './MonsterAttackReceiver';
 
