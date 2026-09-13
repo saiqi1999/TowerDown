@@ -1,21 +1,35 @@
 import { _decorator, Component } from 'cc';
 import { CombatEventHub } from '../combat/CombatEventHub';
-import { type AttackImpactReceiver, type AttackImpactSignal } from '../combat/CombatTypes';
+import {
+    type AttackImpactReceiver,
+    type AttackImpactResult,
+    type AttackImpactSignal,
+} from '../combat/CombatTypes';
+import { HealthComponent } from '../combat/HealthComponent';
+import { DamagePopupSpawner } from '../feedback/DamagePopupSpawner';
 import { HitFlashView } from '../feedback/HitFlashView';
+import { WorldObjectLifecycleController } from './WorldObjectLifecycleController';
+import { WorldObjectView } from './WorldObjectView';
 
 const { ccclass } = _decorator;
 
 export interface WorldObjectAttackReceiverConfig {
     objectId: string;
     combatEventHub: CombatEventHub;
+    health: HealthComponent;
     hitFlashView: HitFlashView;
+    damagePopupSpawner: DamagePopupSpawner;
+    lifecycle: WorldObjectLifecycleController;
 }
 
 @ccclass('WorldObjectAttackReceiver')
 export class WorldObjectAttackReceiver extends Component implements AttackImpactReceiver {
     private objectId = '';
     private combatEventHub: CombatEventHub | null = null;
+    private health: HealthComponent | null = null;
     private hitFlashView: HitFlashView | null = null;
+    private damagePopupSpawner: DamagePopupSpawner | null = null;
+    private lifecycle: WorldObjectLifecycleController | null = null;
     private registered = false;
 
     public setup(
@@ -24,19 +38,40 @@ export class WorldObjectAttackReceiver extends Component implements AttackImpact
         // Receiver 自己完成注册，是为了让资源节点在创建时就把“目标身份”和“表现组件”封装成一个完整接收端。
         this.objectId = config.objectId;
         this.combatEventHub = config.combatEventHub;
+        this.health = config.health;
         this.hitFlashView = config.hitFlashView;
+        this.damagePopupSpawner = config.damagePopupSpawner;
+        this.lifecycle = config.lifecycle;
         this.combatEventHub.registerReceiver(this.objectId, this);
         this.registered = true;
     }
 
     public onAttackImpact(
         signal: AttackImpactSignal,
-    ): void {
-        // 第一版只触发视觉反馈，不引入 HP / Damage，这样能先把攻击事件链和数值系统彻底分开。
-        this.hitFlashView?.flash();
+    ): AttackImpactResult {
+        const damageResult = this.health?.takeDamage(signal.damage) ?? {
+            requestedDamage: signal.damage,
+            actualDamage: 0,
+            healthBefore: 0,
+            healthAfter: 0,
+            becameDepleted: true,
+        };
+        if (damageResult.actualDamage > 0) {
+            this.hitFlashView?.flash();
+            this.damagePopupSpawner?.spawnDamage(this.node, damageResult.actualDamage);
+        }
+        if (damageResult.becameDepleted) {
+            this.node.getComponent(WorldObjectView)?.setInteractable(false);
+            this.lifecycle?.requestRemove(this.objectId);
+        }
         console.log(
-            `[AttackImpact] attacker=${signal.attackerId} target=${signal.targetId}`,
+            `[Damage] target=${signal.targetId} requested=${damageResult.requestedDamage} actual=${damageResult.actualDamage} hp=${damageResult.healthAfter}/${this.health?.getMaxHealth() ?? 0}`,
         );
+        return {
+            targetId: this.objectId,
+            damageResult,
+            targetDepleted: this.health?.isDepleted() ?? true,
+        };
     }
 
     public dispose(): void {
@@ -54,6 +89,9 @@ export class WorldObjectAttackReceiver extends Component implements AttackImpact
         // onDestroy 再走一遍 dispose 是兜底，保证无论是主动清理还是编辑器销毁都不会留下脏注册。
         this.dispose();
         this.hitFlashView = null;
+        this.health = null;
+        this.damagePopupSpawner = null;
+        this.lifecycle = null;
         this.combatEventHub = null;
     }
 }

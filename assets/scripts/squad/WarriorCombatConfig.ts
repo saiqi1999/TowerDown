@@ -1,0 +1,2 @@
+export const SWORD_WARRIOR_MAX_HEALTH = 20;
+export const SWORD_WARRIOR_ATTACK_DAMAGE = 1;

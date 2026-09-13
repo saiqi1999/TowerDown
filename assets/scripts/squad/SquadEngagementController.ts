@@ -1,5 +1,6 @@
 import { _decorator, Component } from 'cc';
 import { CombatEventHub } from '../combat/CombatEventHub';
+import { CombatStats } from '../combat/CombatStats';
 import { type GridPoint } from '../navigation/NavigationTypes';
 import { getWorldVisualDefinition } from '../world/WorldAtlasConfig';
 import { type WorldObjectData } from '../world/WorldObjectTypes';
@@ -29,6 +30,7 @@ export interface SquadEngagementConfig {
     squadMotor: SquadMotor;
     warriorMotors: WarriorMotor[];
     warriorAnimators: WarriorAnimator[];
+    warriorCombatStats: CombatStats[];
     slotResolver: InteractionSlotResolver;
     combatEventHub: CombatEventHub;
 }
@@ -46,12 +48,14 @@ export class SquadEngagementController extends Component {
     private squadMotor: SquadMotor | null = null;
     private warriorMotors: WarriorMotor[] = [];
     private warriorAnimators: WarriorAnimator[] = [];
+    private warriorCombatStats: CombatStats[] = [];
     private slotResolver: InteractionSlotResolver | null = null;
     private combatEventHub: CombatEventHub | null = null;
     private currentTarget: WorldObjectData | null = null;
     private assignments: WarriorSlotAssignment[] = [];
     private state = SquadEngagementState.Inactive;
     private anyWarriorEngaged = false;
+    private targetDepletedPending = false;
     private initialized = false;
 
     public setup(config: SquadEngagementConfig): void {
@@ -60,12 +64,14 @@ export class SquadEngagementController extends Component {
         this.squadMotor = config.squadMotor;
         this.warriorMotors = [...config.warriorMotors];
         this.warriorAnimators = [...config.warriorAnimators];
+        this.warriorCombatStats = [...config.warriorCombatStats];
         this.slotResolver = config.slotResolver;
         this.combatEventHub = config.combatEventHub;
         this.currentTarget = null;
         this.assignments = [];
         this.state = SquadEngagementState.Inactive;
         this.anyWarriorEngaged = false;
+        this.targetDepletedPending = false;
         this.initialized = true;
 
         for (let index = 0; index < this.warriorAnimators.length; index += 1) {
@@ -97,6 +103,7 @@ export class SquadEngagementController extends Component {
         this.currentTarget = target;
         this.assignments = assignments;
         this.anyWarriorEngaged = false;
+        this.targetDepletedPending = false;
         this.state = SquadEngagementState.MovingToSlots;
 
         const assignedWarriors = new Set<number>();
@@ -137,6 +144,7 @@ export class SquadEngagementController extends Component {
         this.currentTarget = null;
         this.assignments = [];
         this.anyWarriorEngaged = false;
+        this.targetDepletedPending = false;
         this.state = SquadEngagementState.Reforming;
 
         for (const motor of this.warriorMotors) {
@@ -152,6 +160,12 @@ export class SquadEngagementController extends Component {
 
     public isInactive(): boolean {
         return this.state === SquadEngagementState.Inactive;
+    }
+
+    public consumeTargetDepleted(): boolean {
+        const depleted = this.targetDepletedPending;
+        this.targetDepletedPending = false;
+        return depleted;
     }
 
     public isReforming(): boolean {
@@ -225,10 +239,15 @@ export class SquadEngagementController extends Component {
             return;
         }
 
-        this.combatEventHub.emitAttackImpact({
+        const result = this.combatEventHub.emitAttackImpact({
             attackerId: `${this.squadId}/warrior_${warriorIndex}`,
             targetId: this.currentTarget.id,
+            damage: this.warriorCombatStats[warriorIndex]?.getAttackDamage() ?? 0,
         });
+        if (result?.targetDepleted) {
+            this.currentTarget = null;
+            this.targetDepletedPending = true;
+        }
     }
 
     private tryCompleteReform(): void {

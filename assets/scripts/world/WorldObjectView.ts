@@ -12,6 +12,7 @@ export class WorldObjectView extends Component {
     public gridW = 1;
     public gridH = 1;
     public resourceType: ResourceType | null = null;
+    private interactable = true;
     private clickHandler: ((objectId: string) => void) | null = null;
 
     onEnable(): void {
@@ -28,7 +29,14 @@ export class WorldObjectView extends Component {
         this.clickHandler = handler;
     }
 
+    public setInteractable(value: boolean): void {
+        this.interactable = value;
+    }
+
     private handleTouchEnd(): void {
+        if (!this.interactable) {
+            return;
+        }
         this.clickHandler?.(this.objectId);
     }
 }

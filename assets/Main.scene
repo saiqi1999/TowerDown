@@ -804,6 +804,14 @@
       "__uuid__": "6d264a4a-acdb-4d54-9756-3725d99a3979",
       "__expectedType__": "cc.Material"
     },
+    "friendlyHealthBarTexture": {
+      "__uuid__": "812bd56c-f0d7-40cc-9172-7c5f3962a3f7@6c48a",
+      "__expectedType__": "cc.Texture2D"
+    },
+    "resourceHealthBarTexture": {
+      "__uuid__": "86834bfa-431a-442e-ab7a-22f1df29ccc9@6c48a",
+      "__expectedType__": "cc.Texture2D"
+    },
     "_id": "76CRmaIWFFCqJaoF9N5QdR"
   },
   {

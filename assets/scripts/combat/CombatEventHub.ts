@@ -1,4 +1,8 @@
-import { type AttackImpactReceiver, type AttackImpactSignal } from './CombatTypes';
+import {
+    type AttackImpactReceiver,
+    type AttackImpactResult,
+    type AttackImpactSignal,
+} from './CombatTypes';
 
 export class CombatEventHub {
     private readonly receivers = new Map<string, AttackImpactReceiver>();
@@ -32,14 +36,14 @@ export class CombatEventHub {
     // emit 只做 targetId 路由，不夹带任何资源/伤害逻辑，这样未来怪物和建筑也能复用同一条攻击事件链。
     public emitAttackImpact(
         signal: AttackImpactSignal,
-    ): void {
+    ): AttackImpactResult | null {
         const receiver = this.receivers.get(signal.targetId);
         if (!receiver) {
             // 目标可能在命中边沿到来前已经被销毁，这里保留 warning 但不把竞态升级成异常。
             console.warn(`[CombatEventHub] no receiver for target=${signal.targetId}`);
-            return;
+            return null;
         }
 
-        receiver.onAttackImpact(signal);
+        return receiver.onAttackImpact(signal);
     }
 }

@@ -1,4 +1,5 @@
 import {
+    Material,
     Node,
     Sprite,
     SpriteFrame,
@@ -6,12 +7,17 @@ import {
     UITransform,
 } from 'cc';
 import { CombatEventHub } from '../combat/CombatEventHub';
+import { CombatStats } from '../combat/CombatStats';
+import { HealthComponent } from '../combat/HealthComponent';
+import { DamagePopupSpawner } from '../feedback/DamagePopupSpawner';
+import { HealthBarView } from '../feedback/HealthBarView';
+import { HitFlashView } from '../feedback/HitFlashView';
 import {
     GRID_RENDER_SCALE,
 } from '../grid/GridConfig';
 import { type NavigationGrid } from '../navigation/NavigationGrid';
 import { type WorldNavigator } from '../navigation/WorldNavigator';
-import { STATIC_WORLD_OBJECTS } from '../world/StaticWorldObjects';
+import { WorldObjectRuntimeRegistry } from '../world/WorldObjectRuntimeRegistry';
 import { getWorldVisualDefinition } from '../world/WorldAtlasConfig';
 import { type WorldObjectData } from '../world/WorldObjectTypes';
 import { SquadBrain, type SquadHomeBounds } from './SquadBrain';
@@ -25,6 +31,11 @@ import {
 } from './SquadTypes';
 import { WarriorAnimator } from './WarriorAnimator';
 import { WarriorMotor } from './WarriorMotor';
+import { WarriorAttackReceiver } from './WarriorAttackReceiver';
+import {
+    SWORD_WARRIOR_ATTACK_DAMAGE,
+    SWORD_WARRIOR_MAX_HEALTH,
+} from './WarriorCombatConfig';
 import {
     createWarriorAttackFrame,
     createWarriorFrame,
@@ -48,6 +59,10 @@ export class SquadRenderer {
         private readonly navigationGrid: NavigationGrid,
         private readonly navigator: WorldNavigator,
         private readonly combatEventHub: CombatEventHub,
+        private readonly worldObjectRegistry: WorldObjectRuntimeRegistry,
+        private readonly friendlyHealthBarTexture: Texture2D,
+        private readonly hitFlashMaterial: Material,
+        private readonly damagePopupSpawner: DamagePopupSpawner,
     ) {}
 
     public clear(): void {
@@ -64,9 +79,6 @@ export class SquadRenderer {
 
         const walkFrameSet = this.getOrCreateWalkFrameSet();
         const attackFrameSet = this.getOrCreateAttackFrameSet();
-        const worldObjectById = new Map<string, WorldObjectData>(
-            STATIC_WORLD_OBJECTS.map((objectData) => [objectData.id, objectData]),
-        );
         const handles = new Map<string, SquadRuntimeHandle>();
 
         for (const squad of squads) {
@@ -98,6 +110,7 @@ export class SquadRenderer {
 
             const warriors: WarriorAnimator[] = [];
             const warriorMotors: WarriorMotor[] = [];
+            const warriorCombatStats: CombatStats[] = [];
             for (let i = 0; i < squad.memberCount; i += 1) {
                 const warriorNode = new Node(`Warrior_${i}`);
                 warriorNode.setParent(squadNode);
@@ -124,6 +137,31 @@ export class SquadRenderer {
                 );
                 warriors.push(animator);
 
+                const stats = warriorNode.addComponent(CombatStats);
+                stats.setup({ attackDamage: SWORD_WARRIOR_ATTACK_DAMAGE });
+                warriorCombatStats.push(stats);
+                const health = warriorNode.addComponent(HealthComponent);
+                health.setup(SWORD_WARRIOR_MAX_HEALTH);
+                const healthBar = warriorNode.addComponent(HealthBarView);
+                healthBar.setup({
+                    health,
+                    texture: this.friendlyHealthBarTexture,
+                    localOffsetY: 11,
+                });
+                const hitFlashView = warriorNode.addComponent(HitFlashView);
+                hitFlashView.setup({
+                    sprite,
+                    baseMaterial: this.hitFlashMaterial,
+                });
+                const attackReceiver = warriorNode.addComponent(WarriorAttackReceiver);
+                attackReceiver.setup({
+                    targetId: `${squad.id}/warrior_${i}`,
+                    combatEventHub: this.combatEventHub,
+                    health,
+                    hitFlashView,
+                    damagePopupSpawner: this.damagePopupSpawner,
+                });
+
                 const warriorMotor = warriorNode.addComponent(WarriorMotor);
                 warriorMotor.setup({
                     animator,
@@ -146,6 +184,7 @@ export class SquadRenderer {
                 squadMotor: motor,
                 warriorMotors,
                 warriorAnimators: warriors,
+                warriorCombatStats,
                 slotResolver: new InteractionSlotResolver(this.navigationGrid),
                 // 同一个 combat hub 必须注入 squad 和 world object 两侧，命中事件才能真正闭环。
                 combatEventHub: this.combatEventHub,
@@ -165,7 +204,7 @@ export class SquadRenderer {
                 motor,
                 engagement,
                 navigator: this.navigator,
-                worldObjectById,
+                worldObjectRegistry: this.worldObjectRegistry,
                 warriors,
                 homeRestCell,
                 homeBounds,
@@ -185,7 +224,7 @@ export class SquadRenderer {
     }
 
     private getHomeObject(homeObjectId: string): WorldObjectData {
-        const homeObject = STATIC_WORLD_OBJECTS.find((objectData) => objectData.id === homeObjectId);
+        const homeObject = this.worldObjectRegistry.get(homeObjectId);
         if (!homeObject) {
             throw new Error(`[SquadRenderer] home object not found: ${homeObjectId}`);
         }

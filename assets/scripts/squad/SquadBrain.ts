@@ -2,6 +2,7 @@ import { _decorator, Component, randomRange } from 'cc';
 import { type GridCell, type GridPoint } from '../navigation/NavigationTypes';
 import { WorldNavigator } from '../navigation/WorldNavigator';
 import { type WorldObjectData, WorldObjectKind } from '../world/WorldObjectTypes';
+import { WorldObjectRuntimeRegistry } from '../world/WorldObjectRuntimeRegistry';
 import { SquadEngagementController } from './SquadEngagementController';
 import { type CommandResult } from './SquadTypes';
 import { WarriorAnimator } from './WarriorAnimator';
@@ -35,7 +36,7 @@ export interface SquadBrainConfig {
     engagement: SquadEngagementController;
     // Navigator 在启动阶段注入，避免 Brain 自己持有地图构建职责。
     navigator: WorldNavigator;
-    worldObjectById: ReadonlyMap<string, WorldObjectData>;
+    worldObjectRegistry: WorldObjectRuntimeRegistry;
     warriors: WarriorAnimator[];
     homeRestCell: GridCell;
     homeBounds: SquadHomeBounds;
@@ -53,7 +54,7 @@ export class SquadBrain extends Component {
     private motor!: SquadMotor;
     private engagement!: SquadEngagementController;
     private navigator!: WorldNavigator;
-    private worldObjectById: ReadonlyMap<string, WorldObjectData> = new Map();
+    private worldObjectRegistry!: WorldObjectRuntimeRegistry;
     private warriors: WarriorAnimator[] = [];
     private homeRestCell!: GridCell;
     private homeBounds!: SquadHomeBounds;
@@ -64,7 +65,7 @@ export class SquadBrain extends Component {
         this.motor = config.motor;
         this.engagement = config.engagement;
         this.navigator = config.navigator;
-        this.worldObjectById = config.worldObjectById;
+        this.worldObjectRegistry = config.worldObjectRegistry;
         this.warriors = config.warriors;
         this.homeRestCell = config.homeRestCell;
         this.homeBounds = config.homeBounds;
@@ -74,7 +75,7 @@ export class SquadBrain extends Component {
     }
 
     public issueTarget(targetId: string): CommandResult {
-        const target = this.worldObjectById.get(targetId);
+        const target = this.worldObjectRegistry.get(targetId);
         if (!target) {
             return {
                 accepted: false,
@@ -169,6 +170,10 @@ export class SquadBrain extends Component {
             }
             break;
         case SquadBrainState.AttackResource:
+            if (this.engagement.consumeTargetDepleted()) {
+                this.clearCommandAndReturnHome();
+            }
+            break;
         default:
             break;
         }
@@ -241,7 +246,7 @@ export class SquadBrain extends Component {
         }
 
         if (this.pendingTargetId) {
-            const target = this.worldObjectById.get(this.pendingTargetId);
+            const target = this.worldObjectRegistry.get(this.pendingTargetId);
             if (!target) {
                 console.warn(
                     `[SquadBrain] ${this.squadId} pending target disappeared: ${this.pendingTargetId}`,
@@ -340,7 +345,7 @@ export class SquadBrain extends Component {
             return null;
         }
 
-        const target = this.worldObjectById.get(this.activeTargetId) ?? null;
+        const target = this.worldObjectRegistry.get(this.activeTargetId);
         if (!target) {
             console.warn(
                 `[SquadBrain] ${this.squadId} current target disappeared: ${this.activeTargetId}`,

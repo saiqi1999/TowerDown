@@ -5,13 +5,14 @@ import { WorldObjectView } from '../world/WorldObjectView';
 import { createTargetFlagFrames } from './TargetFlagSpriteConfig';
 import { TargetFlagView } from './TargetFlagView';
 import { type SquadRuntimeHandle } from '../squad/SquadTypes';
+import { WorldObjectRuntimeRegistry } from '../world/WorldObjectRuntimeRegistry';
 
 const { ccclass } = _decorator;
 
 export interface WorldCommandControllerConfig {
     worldObjectRoot: Node;
     commandRoot: Node;
-    worldObjects: readonly WorldObjectData[];
+    worldObjectRegistry: WorldObjectRuntimeRegistry;
     squadHandles: ReadonlyMap<string, SquadRuntimeHandle>;
     targetFlagTexture: Texture2D;
     mapWidth: number;
@@ -25,7 +26,7 @@ export class WorldCommandController extends Component {
     private commandRoot: Node | null = null;
     private mapWidth = 0;
     private mapHeight = 0;
-    private worldObjectById = new Map<string, WorldObjectData>();
+    private worldObjectRegistry: WorldObjectRuntimeRegistry | null = null;
     private squadHandles: ReadonlyMap<string, SquadRuntimeHandle> = new Map();
     private flagFrames: SpriteFrame[] = [];
     private readonly targetBySquad = new Map<string, string>();
@@ -36,7 +37,7 @@ export class WorldCommandController extends Component {
         this.commandRoot = config.commandRoot;
         this.mapWidth = config.mapWidth;
         this.mapHeight = config.mapHeight;
-        this.worldObjectById = new Map(config.worldObjects.map((objectData) => [objectData.id, objectData]));
+        this.worldObjectRegistry = config.worldObjectRegistry;
         this.squadHandles = config.squadHandles;
         this.flagFrames = createTargetFlagFrames(config.targetFlagTexture);
 
@@ -81,7 +82,7 @@ export class WorldCommandController extends Component {
             return;
         }
 
-        const target = this.worldObjectById.get(objectId);
+        const target = this.worldObjectRegistry?.get(objectId) ?? null;
         if (!target) {
             console.warn(`[WorldCommandController] target missing after command accepted: ${objectId}`);
             return;

@@ -9,6 +9,8 @@ import {
     UITransform,
 } from 'cc';
 import { CombatEventHub } from '../combat/CombatEventHub';
+import { ResourceInventory } from '../economy/ResourceInventory';
+import { DamagePopupSpawner } from '../feedback/DamagePopupSpawner';
 import { WorldCommandController } from '../command/WorldCommandController';
 import { AStarPathfinder } from '../navigation/AStarPathfinder';
 import { NavigationGridBuilder } from '../navigation/NavigationGridBuilder';
@@ -24,10 +26,13 @@ import {
     NATURE_ATLAS_TEXTURE_UUID,
 } from '../world/WorldAtlasConfig';
 import { WorldObjectRenderer } from '../world/WorldObjectRenderer';
+import { WorldObjectLifecycleController } from '../world/WorldObjectLifecycleController';
+import { WorldObjectRuntimeRegistry } from '../world/WorldObjectRuntimeRegistry';
 import { STATIC_WORLD_OBJECTS } from '../world/StaticWorldObjects';
 import { MapRenderer } from './MapRenderer';
 import { STATIC_MAP } from './StaticMap';
 import { TERRAIN_SPRITE_FRAME_FALLBACK_UUID, TERRAIN_SPRITE_FRAME_UUID } from './TerrainAtlas';
+import { ResourceHudView } from '../ui/ResourceHudView';
 
 const { ccclass, property } = _decorator;
 
@@ -56,6 +61,12 @@ export class MainMapController extends Component {
 
     @property(Material)
     public hitFlashMaterial: Material | null = null;
+
+    @property(Texture2D)
+    public friendlyHealthBarTexture: Texture2D | null = null;
+
+    @property(Texture2D)
+    public resourceHealthBarTexture: Texture2D | null = null;
 
     private mapRenderer: MapRenderer | null = null;
     private worldObjectRenderer: WorldObjectRenderer | null = null;
@@ -118,6 +129,14 @@ export class MainMapController extends Component {
             this.hitFlashMaterial,
             'hitFlashMaterial',
         );
+        const friendlyHealthBarTexture = this.requireInspectorTexture(
+            this.friendlyHealthBarTexture,
+            'friendlyHealthBarTexture',
+        );
+        const resourceHealthBarTexture = this.requireInspectorTexture(
+            this.resourceHealthBarTexture,
+            'resourceHealthBarTexture',
+        );
 
         this.structureRoot = structureRoot;
         this.resourceRoot = resourceRoot;
@@ -127,11 +146,23 @@ export class MainMapController extends Component {
         this.targetFlagTexture = targetFlagTexture;
         this.warriorAttackTexture = warriorAttackTexture;
         this.hitFlashMaterial = hitFlashMaterial;
+        this.friendlyHealthBarTexture = friendlyHealthBarTexture;
+        this.resourceHealthBarTexture = resourceHealthBarTexture;
         this.combatEventHub = new CombatEventHub();
+        const worldObjectRegistry = new WorldObjectRuntimeRegistry(STATIC_WORLD_OBJECTS);
+        const resourceInventory = new ResourceInventory();
+        const feedbackRoot = this.getOrCreateChild(mapRoot, 'WorldFeedbackRoot');
+        const damagePopupSpawner = new DamagePopupSpawner(feedbackRoot);
 
         this.mapRenderer = new MapRenderer(tileRoot, atlasSpriteFrame);
         this.mapRenderer.render(STATIC_MAP);
 
+        const navigationGrid = new NavigationGridBuilder().build(
+            STATIC_MAP,
+            worldObjectRegistry.getAll(),
+        );
+        const lifecycle = mapRoot.getComponent(WorldObjectLifecycleController)
+            ?? mapRoot.addComponent(WorldObjectLifecycleController);
         this.worldObjectRenderer = new WorldObjectRenderer(
             structureRoot,
             resourceRoot,
@@ -139,17 +170,18 @@ export class MainMapController extends Component {
             natureTexture,
             this.combatEventHub,
             hitFlashMaterial,
+            resourceInventory,
+            damagePopupSpawner,
+            lifecycle,
+            resourceHealthBarTexture,
         );
+        lifecycle.setup(worldObjectRegistry, this.worldObjectRenderer, navigationGrid);
         this.worldObjectRenderer.render(
-            STATIC_WORLD_OBJECTS,
+            worldObjectRegistry.getAll(),
             STATIC_MAP[0]?.length ?? 0,
             STATIC_MAP.length,
         );
 
-        const navigationGrid = new NavigationGridBuilder().build(
-            STATIC_MAP,
-            STATIC_WORLD_OBJECTS,
-        );
         const navigator = new WorldNavigator(
             navigationGrid,
             new AStarPathfinder(),
@@ -163,6 +195,10 @@ export class MainMapController extends Component {
             navigationGrid,
             navigator,
             this.combatEventHub,
+            worldObjectRegistry,
+            friendlyHealthBarTexture,
+            hitFlashMaterial,
+            damagePopupSpawner,
         );
         const squadHandles = this.squadRenderer.render(
             STATIC_SQUADS,
@@ -173,12 +209,22 @@ export class MainMapController extends Component {
         commandController.setup({
             worldObjectRoot,
             commandRoot,
-            worldObjects: STATIC_WORLD_OBJECTS,
+            worldObjectRegistry,
             squadHandles,
             targetFlagTexture,
             mapWidth: STATIC_MAP[0]?.length ?? 0,
             mapHeight: STATIC_MAP.length,
         });
+        const hudRoot = this.getOrCreateCanvasChild('HUDRoot');
+        const hudTransform = hudRoot.getComponent(UITransform)
+            ?? hudRoot.addComponent(UITransform);
+        hudTransform.setContentSize(1280, 720);
+        hudTransform.setAnchorPoint(0.5, 0.5);
+        hudRoot.setPosition(0, 0, 0);
+        const resourceHudNode = this.getOrCreateChild(hudRoot, 'ResourceHud');
+        const resourceHud = resourceHudNode.getComponent(ResourceHudView)
+            ?? resourceHudNode.addComponent(ResourceHudView);
+        resourceHud.setup(resourceInventory);
     }
 
     private loadAtlasSpriteFrame(): Promise<SpriteFrame> {
@@ -214,6 +260,24 @@ export class MainMapController extends Component {
         }
 
         return child;
+    }
+
+    private getOrCreateChild(parent: Node, name: string): Node {
+        return parent.getChildByName(name) ?? (() => {
+            const node = new Node(name);
+            node.setParent(parent);
+            node.layer = parent.layer;
+            this.ensureUITransform(node);
+            return node;
+        })();
+    }
+
+    private getOrCreateCanvasChild(name: string): Node {
+        const canvas = this.node.parent;
+        if (!canvas) {
+            throw new Error('[MainMapController] MapRoot must have a Canvas parent.');
+        }
+        return this.getOrCreateChild(canvas, name);
     }
 
     private ensureUITransform(node: Node): UITransform {

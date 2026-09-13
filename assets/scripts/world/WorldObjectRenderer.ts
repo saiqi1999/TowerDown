@@ -10,6 +10,10 @@ import {
     Vec2,
 } from 'cc';
 import { CombatEventHub } from '../combat/CombatEventHub';
+import { HealthComponent } from '../combat/HealthComponent';
+import { ResourceInventory } from '../economy/ResourceInventory';
+import { DamagePopupSpawner } from '../feedback/DamagePopupSpawner';
+import { HealthBarView } from '../feedback/HealthBarView';
 import { HitFlashView } from '../feedback/HitFlashView';
 import { GRID_RENDER_SCALE, GRID_SOURCE_SIZE } from '../grid/GridConfig';
 import { gridRectToWorldCenter } from '../grid/GridTransform';
@@ -25,9 +29,13 @@ import {
 } from './WorldObjectTypes';
 import { WorldObjectAttackReceiver } from './WorldObjectAttackReceiver';
 import { WorldObjectView } from './WorldObjectView';
+import { getResourceRuntimeDefinition } from './ResourceRuntimeConfig';
+import { ResourceHarvestComponent } from './ResourceHarvestComponent';
+import { WorldObjectLifecycleController } from './WorldObjectLifecycleController';
 
 export class WorldObjectRenderer {
     private readonly frameCache = new Map<WorldVisualId, SpriteFrame>();
+    private readonly nodeByObjectId = new Map<string, Node>();
 
     constructor(
         private readonly structureRoot: Node,
@@ -36,6 +44,10 @@ export class WorldObjectRenderer {
         private readonly natureTexture: Texture2D,
         private readonly combatEventHub: CombatEventHub,
         private readonly hitFlashMaterial: Material,
+        private readonly resourceInventory: ResourceInventory,
+        private readonly damagePopupSpawner: DamagePopupSpawner,
+        private readonly lifecycle: WorldObjectLifecycleController,
+        private readonly resourceHealthBarTexture: Texture2D,
     ) {}
 
     public clear(): void {
@@ -44,7 +56,7 @@ export class WorldObjectRenderer {
         this.clearRoot(this.resourceRoot);
     }
 
-    public render(objects: WorldObjectData[], mapWidth: number, mapHeight: number): void {
+    public render(objects: readonly WorldObjectData[], mapWidth: number, mapHeight: number): void {
         // render 时顺手完成资源侧的 receiver + flash view 装配，让资源节点成为完整的“可被命中目标”。
         this.clear();
         this.validateObjects(objects, mapWidth, mapHeight);
@@ -66,6 +78,7 @@ export class WorldObjectRenderer {
                 ),
             );
             node.setScale(GRID_RENDER_SCALE, GRID_RENDER_SCALE, 1);
+            this.nodeByObjectId.set(objectData.id, node);
 
             const transform = node.addComponent(UITransform);
             transform.setContentSize(
@@ -87,17 +100,40 @@ export class WorldObjectRenderer {
             view.resourceType = objectData.resourceType ?? null;
 
             if (objectData.kind === WorldObjectKind.Resource) {
+                const resourceType = objectData.resourceType;
+                if (resourceType === undefined) {
+                    throw new Error(`[WorldObjectRenderer] resourceType missing: ${objectData.id}`);
+                }
+                const health = node.addComponent(HealthComponent);
+                const resourceDefinition = getResourceRuntimeDefinition(resourceType);
+                health.setup(resourceDefinition.maxHealth);
+                const healthBar = node.addComponent(HealthBarView);
+                healthBar.setup({
+                    health,
+                    texture: this.resourceHealthBarTexture,
+                    localOffsetY: definition.h * GRID_SOURCE_SIZE / 2 + 3,
+                });
                 const hitFlashView = node.addComponent(HitFlashView);
                 hitFlashView.setup({
                     sprite,
                     baseMaterial: this.hitFlashMaterial,
                 });
 
+                const harvest = node.addComponent(ResourceHarvestComponent);
+                harvest.setup({
+                    resourceType,
+                    health,
+                    inventory: this.resourceInventory,
+                    yieldPerDamage: resourceDefinition.yieldPerDamage,
+                });
                 const attackReceiver = node.addComponent(WorldObjectAttackReceiver);
                 attackReceiver.setup({
                     objectId: objectData.id,
                     combatEventHub: this.combatEventHub,
                     hitFlashView,
+                    health,
+                    damagePopupSpawner: this.damagePopupSpawner,
+                    lifecycle: this.lifecycle,
                 });
             }
         }
@@ -105,7 +141,19 @@ export class WorldObjectRenderer {
         console.log(`[WorldObjectRenderer] rendered ${objects.length} world objects.`);
     }
 
-    private validateObjects(objects: WorldObjectData[], mapWidth: number, mapHeight: number): void {
+    public removeObject(objectId: string): boolean {
+        const node = this.nodeByObjectId.get(objectId);
+        if (!node) {
+            return false;
+        }
+        node.getComponent(WorldObjectAttackReceiver)?.dispose();
+        this.nodeByObjectId.delete(objectId);
+        node.removeFromParent();
+        node.destroy();
+        return true;
+    }
+
+    private validateObjects(objects: readonly WorldObjectData[], mapWidth: number, mapHeight: number): void {
         const occupiedCells = new Set<string>();
 
         for (const objectData of objects) {
@@ -138,6 +186,10 @@ export class WorldObjectRenderer {
         // 这里先 dispose 再 destroy，是为了保证 combat hub 的注销时机早于同帧内的新节点重建。
         for (const child of [...root.children]) {
             child.getComponent(WorldObjectAttackReceiver)?.dispose();
+            const view = child.getComponent(WorldObjectView);
+            if (view) {
+                this.nodeByObjectId.delete(view.objectId);
+            }
             // 先从树上摘掉再 destroy，避免同一帧重建时旧 receiver 仍占着 targetId。
             child.removeFromParent();
             child.destroy();
