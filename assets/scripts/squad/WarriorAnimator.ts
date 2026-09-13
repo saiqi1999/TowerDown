@@ -65,8 +65,11 @@ export class WarriorAnimator extends Component {
     }
 
     public subscribeAttackImpact(listener: () => void): () => void {
-        this.attackImpactListeners.add(listener);
-        return () => this.attackImpactListeners.delete(listener);
+        const listeners = this.attackImpactListeners;
+        listeners.add(listener);
+        return () => {
+            listeners.delete(listener);
+        };
     }
 
     public playIdle(direction?: WarriorDirection): void {

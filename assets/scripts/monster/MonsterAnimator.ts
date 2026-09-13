@@ -47,8 +47,11 @@ export class MonsterAnimator extends Component {
         this.apply();
     }
     public subscribeAttackImpact(listener: MonsterAttackImpactListener): () => void {
-        this.impactListeners.add(listener);
-        return () => this.impactListeners.delete(listener);
+        const listeners = this.impactListeners;
+        listeners.add(listener);
+        return () => {
+            listeners.delete(listener);
+        };
     }
     public playIdle(direction = this.direction): void { this.setState(MonsterAnimationState.Idle, direction); }
     public playMove(direction: MonsterDirection): void {

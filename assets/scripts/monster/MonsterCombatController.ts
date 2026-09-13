@@ -147,5 +147,8 @@ this.state = MonsterCombatState.Approaching;
             this.hub.emitAttackImpact({ attackerId: this.id, targetId: this.target.id, damage: this.stats.getAttackDamage() });
         }
     }
-    onDestroy(): void { this.impactUnsubscribe?.(); }
+    onDestroy(): void {
+        this.impactUnsubscribe?.();
+        this.impactUnsubscribe = null;
+    }
 }
