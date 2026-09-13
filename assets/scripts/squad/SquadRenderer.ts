@@ -84,12 +84,15 @@ export class SquadRenderer {
         const walkFrameSet = this.getOrCreateWalkFrameSet();
         const attackFrameSet = this.getOrCreateAttackFrameSet();
         const handles = new Map<string, SquadRuntimeHandle>();
+         
 
         for (const squad of squads) {
+            const warriorIds: string[] = [];
+            const warriorCombatControllers: WarriorCombatController[] = []; 
             if (squad.memberCount !== 4) {
                 throw new Error(`[SquadRenderer] ${squad.id} requires exactly 4 members in Phase 2.`);
             }
-
+            
             const homeObject = this.getHomeObject(squad.homeObjectId);
             const homeVisual = getWorldVisualDefinition(homeObject.visualId);
             const homeLeft = homeObject.gridX;
@@ -116,8 +119,9 @@ export class SquadRenderer {
             const warriorMotors: WarriorMotor[] = [];
             const warriorCombatStats: CombatStats[] = [];
             const warriorHealth: HealthComponent[] = [];
-            const warriorCombatControllers: WarriorCombatController[] = [];
             for (let i = 0; i < squad.memberCount; i += 1) {
+                const warriorId = `${squad.id}/warrior_${i}`;
+                warriorIds.push(warriorId);
                 const warriorNode = new Node(`Warrior_${i}`);
                 warriorNode.setParent(squadNode);
                 warriorNode.layer = squadNode.layer;
@@ -166,7 +170,7 @@ export class SquadRenderer {
                 });
                 const attackReceiver = warriorNode.addComponent(WarriorAttackReceiver);
                 attackReceiver.setup({
-                    targetId: `${squad.id}/warrior_${i}`,
+                    targetId: warriorId,
                     combatEventHub: this.combatEventHub,
                     health,
                     hitFlashView,
@@ -179,7 +183,9 @@ export class SquadRenderer {
                     formationOffset: SQUAD_FORMATION_OFFSETS[i]!,
                 });
                 warriorMotors.push(warriorMotor);
-                const warriorCombat = warriorNode.addComponent(WarriorCombatController);
+                const warriorCombat =
+                warriorNode.addComponent(WarriorCombatController);
+
                 warriorCombatControllers.push(warriorCombat);
             }
 
@@ -190,17 +196,28 @@ export class SquadRenderer {
                 mapHeight,
                 warriors,
             });
-            for (const warriorCombat of warriorCombatControllers) {
-                warriorCombat.setup({
-                    unitId: warriorCombat.id,
-                    squadMotor: motor,
-                    motor: warriorCombat.getComponent(WarriorMotor)!,
-                    animator: warriorCombat.getComponent(WarriorAnimator)!,
-                    health: warriorCombat.getComponent(HealthComponent)!,
-                    stats: warriorCombat.getComponent(CombatStats)!,
-                    hub: this.combatEventHub,
-                });
-            }
+            // for (const warriorCombat of warriorCombatControllers) {
+            //     warriorCombat.setup({
+            //         unitId: warriorCombat.id,
+            //         squadMotor: motor,
+            //         motor: warriorCombat.getComponent(WarriorMotor)!,
+            //         animator: warriorCombat.getComponent(WarriorAnimator)!,
+            //         health: warriorCombat.getComponent(HealthComponent)!,
+            //         stats: warriorCombat.getComponent(CombatStats)!,
+            //         hub: this.combatEventHub,
+            //     });
+            // }
+            for (let i = 0; i < warriorCombatControllers.length; i += 1) {
+            warriorCombatControllers[i]!.setup({
+                unitId: warriorIds[i]!,
+                squadMotor: motor,
+                motor: warriorMotors[i]!,
+                animator: warriors[i]!,
+                health: warriorHealth[i]!,
+                stats: warriorCombatStats[i]!,
+                hub: this.combatEventHub,
+            });
+            }   
             const combat = squadNode.addComponent(SquadCombatController);
             combat.setup(squad.id, motor, warriorCombatControllers);
 
