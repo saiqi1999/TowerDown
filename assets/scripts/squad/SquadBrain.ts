@@ -161,9 +161,28 @@ export class SquadBrain extends Component {
         // Flag 需要跟随“最新已接受命令”而不是旧的实际交互目标，否则 reform 期间会提前消失。
         return this.commandTargetId;
     }
-    public resumeTargetAfterGuardVictory(): void {
-        if (!this.activeTargetId || this.state !== SquadBrainState.EngageTarget) return;
-        this.beginTargetEngagement();
+    private resumeTargetAfterGuardVictory(): void {
+        const target = this.getActiveTarget();
+        if (!target) {
+            this.clearCommandAndReturnHome();
+            return;
+        }
+
+        const pathResult = this.navigator.findPathToObject(
+            this.motor.getGridPosition(),
+            target,
+        );
+        if (!pathResult) {
+            console.warn(
+                `[SquadBrain] ${this.squadId} target unreachable after guard victory: ${target.id}`,
+            );
+            this.clearCommandAndReturnHome();
+            return;
+        }
+
+        this.guardEncounterRequested = false;
+        this.state = SquadBrainState.MoveToTarget;
+        this.motor.setPath(pathResult.path);
     }
 
     update(dt: number): void {
@@ -196,14 +215,14 @@ export class SquadBrain extends Component {
         case SquadBrainState.GuardCombat:
             if (this.combat?.isInactive()) {
                 if (this.combat.consumeGuardDefeated()) {
-                    this.beginTargetEngagement();
+                    this.resumeTargetAfterGuardVictory();
                 } else {
                     this.state = SquadBrainState.MoveToTarget;
                 }
             }
             break;
         case SquadBrainState.Reform:
-            if (this.engagement.isInactive()) {
+            if (this.engagement.isInactive() && (this.combat?.isInactive() ?? true)) {
                 this.resumePostReformCommand();
             }
             break;
@@ -267,7 +286,7 @@ export class SquadBrain extends Component {
             return;
         }
 
-        this.state = SquadBrainState.GuardCombat;
+        this.state = SquadBrainState.EngageTarget;
     }
 
     private tryActivateGuard(): boolean {
@@ -286,7 +305,7 @@ export class SquadBrain extends Component {
             console.warn(`[SquadBrain] guard encounter request rejected: ${this.activeTargetId}`);
             return false;
         }
-        this.state = SquadBrainState.EngageTarget;
+        this.state = SquadBrainState.GuardCombat;
         return true;
     }
 
