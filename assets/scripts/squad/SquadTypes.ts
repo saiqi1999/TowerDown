@@ -7,6 +7,8 @@ import { type WarriorAnimator } from './WarriorAnimator';
 import { type WarriorMotor } from './WarriorMotor';
 import { type CombatStats } from '../combat/CombatStats';
 import { type HealthComponent } from '../combat/HealthComponent';
+import { type WarriorCombatController } from './WarriorCombatController';
+import { type SquadCombatController } from './SquadCombatController';
 
 export enum WarriorVisualId {
     SwordWarrior = 0,
@@ -27,6 +29,8 @@ export interface SquadRuntimeHandle {
     warriorMotors: WarriorMotor[];
     warriorStats: CombatStats[];
     warriorHealth: HealthComponent[];
+    warriorCombatControllers: WarriorCombatController[];
+    combat: SquadCombatController;
 }
 
 export interface SquadSpawnData {

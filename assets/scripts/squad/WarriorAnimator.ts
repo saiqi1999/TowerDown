@@ -28,7 +28,7 @@ export class WarriorAnimator extends Component {
     private attackFrameDuration = 0.15;
     private walkPhaseOffset = 0;
     private attackPhaseOffset = 0;
-    private attackImpactHandler: (() => void) | null = null;
+    private readonly attackImpactListeners = new Set<() => void>();
     private attackPoseVisible = false;
 
     // Walk 是 4 帧循环，Attack 是 2 帧循环，历史上共用一个 phaseOffset 会把两种周期混在一起。
@@ -51,7 +51,7 @@ export class WarriorAnimator extends Component {
         this.frameTimer = 0;
         this.animationState = WarriorAnimationState.Idle;
         this.direction = WarriorDirection.Down;
-        this.attackImpactHandler = null;
+        this.attackImpactListeners.clear();
         this.attackPoseVisible = false;
         this.applyFrame();
     }
@@ -60,7 +60,13 @@ export class WarriorAnimator extends Component {
     public bindAttackImpactHandler(
         handler: (() => void) | null,
     ): void {
-        this.attackImpactHandler = handler;
+        this.attackImpactListeners.clear();
+        if (handler) this.attackImpactListeners.add(handler);
+    }
+
+    public subscribeAttackImpact(listener: () => void): () => void {
+        this.attackImpactListeners.add(listener);
+        return () => this.attackImpactListeners.delete(listener);
     }
 
     public playIdle(direction?: WarriorDirection): void {
@@ -158,7 +164,7 @@ export class WarriorAnimator extends Component {
             const displayPhase = (this.attackPhase + this.attackPhaseOffset) % 2;
             const nextAttackPoseVisible = displayPhase === 1;
             if (nextAttackPoseVisible && !this.attackPoseVisible) {
-                this.attackImpactHandler?.();
+                for (const listener of this.attackImpactListeners) listener();
             }
             this.attackPoseVisible = nextAttackPoseVisible;
             this.sprite.spriteFrame = displayPhase === 0

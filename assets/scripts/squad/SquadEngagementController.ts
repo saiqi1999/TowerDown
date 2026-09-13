@@ -57,6 +57,7 @@ export class SquadEngagementController extends Component {
     private anyWarriorEngaged = false;
     private targetDepletedPending = false;
     private initialized = false;
+    private readonly impactUnsubscribers: Array<() => void> = [];
 
     public setup(config: SquadEngagementConfig): void {
         // impact handler 在 setup 时一次性绑定到 warrior index，是为了避免每次 beginInteraction 反复覆盖闭包。
@@ -75,9 +76,10 @@ export class SquadEngagementController extends Component {
         this.initialized = true;
 
         for (let index = 0; index < this.warriorAnimators.length; index += 1) {
-            this.warriorAnimators[index]?.bindAttackImpactHandler(() => {
+            const unsubscribe = this.warriorAnimators[index]?.subscribeAttackImpact(() => {
                 this.onWarriorAttackImpact(index);
             });
+            if (unsubscribe) this.impactUnsubscribers.push(unsubscribe);
         }
     }
 
@@ -178,9 +180,8 @@ export class SquadEngagementController extends Component {
 
     onDestroy(): void {
         // Controller 销毁时主动解绑 animator callback，避免子节点动画在销毁边界上还回调已经失效的 controller。
-        for (const animator of this.warriorAnimators) {
-            animator.bindAttackImpactHandler(null);
-        }
+        for (const unsubscribe of this.impactUnsubscribers) unsubscribe();
+        this.impactUnsubscribers.length = 0;
     }
 
     update(): void {

@@ -8,6 +8,7 @@ import { type CommandResult } from './SquadTypes';
 import { WarriorAnimator } from './WarriorAnimator';
 import { SquadMotor } from './SquadMotor';
 import { type MonsterRuntimeRegistry } from '../monster/MonsterRuntimeRegistry';
+import { type SquadCombatController } from './SquadCombatController';
 
 const { ccclass } = _decorator;
 
@@ -16,10 +17,11 @@ export enum SquadBrainState {
     HomeIdle = 0,
     Wander = 1,
     MoveToTarget = 2,
-    EngageTarget = 3,
-    AttackResource = 4,
-    Reform = 5,
-    ReturnHome = 6,
+    GuardCombat = 3,
+    EngageTarget = 4,
+    AttackResource = 5,
+    Reform = 6,
+    ReturnHome = 7,
 }
 
 export interface SquadHomeBounds {
@@ -44,6 +46,7 @@ export interface SquadBrainConfig {
     monsterRegistry?: MonsterRuntimeRegistry;
     onGuardEncounterRequested?: (squadId: string, guardedObjectId: string) => boolean;
     onGuardRetreatRequested?: (squadId: string, guardedObjectId: string) => void;
+    combat?: SquadCombatController;
 }
 
 @ccclass('SquadBrain')
@@ -66,6 +69,7 @@ export class SquadBrain extends Component {
     private monsterRegistry: MonsterRuntimeRegistry | null = null;
     private onGuardEncounterRequested: ((squadId: string, guardedObjectId: string) => boolean) | null = null;
     private guardEncounterRequested = false;
+    private combat: SquadCombatController | null = null;
     private onGuardRetreatRequested: ((squadId: string, guardedObjectId: string) => void) | null = null;
 
     public setup(config: SquadBrainConfig): void {
@@ -80,6 +84,7 @@ export class SquadBrain extends Component {
         this.monsterRegistry = config.monsterRegistry ?? null;
         this.onGuardEncounterRequested = config.onGuardEncounterRequested ?? null;
         this.onGuardRetreatRequested = config.onGuardRetreatRequested ?? null;
+        this.combat = config.combat ?? null;
         this.guardEncounterRequested = false;
         this.initialized = true;
         // 出生后先进入返家附近的待机逻辑，保持基地门口活动的基本行为。
@@ -188,6 +193,15 @@ export class SquadBrain extends Component {
                 this.state = SquadBrainState.AttackResource;
             }
             break;
+        case SquadBrainState.GuardCombat:
+            if (this.combat?.isInactive()) {
+                if (this.combat.consumeGuardDefeated()) {
+                    this.beginTargetEngagement();
+                } else {
+                    this.state = SquadBrainState.MoveToTarget;
+                }
+            }
+            break;
         case SquadBrainState.Reform:
             if (this.engagement.isInactive()) {
                 this.resumePostReformCommand();
@@ -253,7 +267,7 @@ export class SquadBrain extends Component {
             return;
         }
 
-        this.state = SquadBrainState.EngageTarget;
+        this.state = SquadBrainState.GuardCombat;
     }
 
     private tryActivateGuard(): boolean {
@@ -389,7 +403,9 @@ export class SquadBrain extends Component {
     }
 
     private shouldReformBeforeNewCommand(): boolean {
-        return this.state === SquadBrainState.EngageTarget
+        return this.state === SquadBrainState.GuardCombat
+            || this.guardEncounterRequested
+            || this.state === SquadBrainState.EngageTarget
             || this.state === SquadBrainState.AttackResource
             || this.state === SquadBrainState.Reform
             || !this.engagement.isInactive();

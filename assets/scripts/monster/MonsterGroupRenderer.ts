@@ -12,11 +12,11 @@ import { getMonsterRuntimeDefinition } from './MonsterConfig';
 import { MonsterAnimator } from './MonsterAnimator';
 import { createMonsterFrame, MonsterDirection, MONSTER_FRAME_COUNT, type MonsterFrameSet } from './MonsterSpriteConfig';
 import { type MonsterGroupData } from './MonsterTypes';
-import { MonsterAttackReceiver } from './MonsterAttackReceiver';
 import { MonsterRuntimeRegistry } from './MonsterRuntimeRegistry';
 import { MonsterGroupController } from './MonsterGroupController';
 import { MonsterMotor } from './MonsterMotor';
-import { MonsterCombatantAdapter } from './MonsterCombatantAdapter';
+import { MonsterCombatController } from './MonsterCombatController';
+import { MonsterAttackReceiver } from './MonsterAttackReceiver';
 
 export class MonsterGroupRenderer {
     private readonly frames = new Map<string, ReturnType<typeof createMonsterFrame>>();
@@ -34,8 +34,10 @@ export class MonsterGroupRenderer {
         for (const group of groups) {
             const guarded = objects.find((object) => object.id === group.guardedObjectId);
             if (!guarded) throw new Error(`[MonsterGroupRenderer] guarded object missing: ${group.guardedObjectId}`);
-            const controller = registry?.register(group, { x: guarded.gridX + 0.5, y: guarded.gridY + 0.5 });
             const groupNode = new Node(`MonsterGroup_${group.id}`); groupNode.setParent(this.root); groupNode.layer = this.root.layer;
+            const groupController = groupNode.addComponent(MonsterGroupController);
+            groupController.setup(group, { x: guarded.gridX + 0.5, y: guarded.gridY + 0.5 });
+            registry?.registerGroup(groupController);
             const definition = { w: 1, h: 1 };
             for (const member of group.members) {
                 const node = new Node(`Slime_${member.id}`); node.setParent(groupNode); node.layer = groupNode.layer;
@@ -89,17 +91,17 @@ export class MonsterGroupRenderer {
                     mapWidth,
                     mapHeight,
                 );
-                if (registry && controller) {
-                    const adapter = new MonsterCombatantAdapter(
-                        member.id,
-                        health,
-                        stats,
-                        position,
-                        motor,
-                        animator,
-                    );
-                    registry.registerMember(adapter);
-                }
+                const combat = node.addComponent(MonsterCombatController);
+                combat.setup({
+                    unitId: member.id,
+                    guardWorldPosition: position,
+                    motor,
+                    animator,
+                    health,
+                    stats,
+                    hub: this.hub,
+                });
+                groupController.addMonster(member.id, combat);
             }
         }
     }

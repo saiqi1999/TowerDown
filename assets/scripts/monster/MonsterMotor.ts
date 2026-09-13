@@ -25,7 +25,10 @@ export class MonsterMotor extends Component {
         this.syncNode();
     }
     public getGridPosition(): GridPoint { return { ...this.position }; }
-    public moveTo(target: GridPoint): void { this.target = { ...target }; }
+    public moveTo(target: GridPoint): void {
+        if (this.target && Math.hypot(target.x - this.target.x, target.y - this.target.y) < 0.02) return;
+        this.target = { ...target };
+    }
     public stop(): void { this.target = null; this.animator?.playIdle(); }
     public isMoving(): boolean { return this.target !== null; }
     update(dt: number): void {

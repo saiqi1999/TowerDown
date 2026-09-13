@@ -31,6 +31,8 @@ import {
 } from './SquadTypes';
 import { WarriorAnimator } from './WarriorAnimator';
 import { type MonsterRuntimeRegistry } from '../monster/MonsterRuntimeRegistry';
+import { WarriorCombatController } from './WarriorCombatController';
+import { SquadCombatController } from './SquadCombatController';
 import { WarriorMotor } from './WarriorMotor';
 import { WarriorAttackReceiver } from './WarriorAttackReceiver';
 import {
@@ -114,6 +116,7 @@ export class SquadRenderer {
             const warriorMotors: WarriorMotor[] = [];
             const warriorCombatStats: CombatStats[] = [];
             const warriorHealth: HealthComponent[] = [];
+            const warriorCombatControllers: WarriorCombatController[] = [];
             for (let i = 0; i < squad.memberCount; i += 1) {
                 const warriorNode = new Node(`Warrior_${i}`);
                 warriorNode.setParent(squadNode);
@@ -176,6 +179,8 @@ export class SquadRenderer {
                     formationOffset: SQUAD_FORMATION_OFFSETS[i]!,
                 });
                 warriorMotors.push(warriorMotor);
+                const warriorCombat = warriorNode.addComponent(WarriorCombatController);
+                warriorCombatControllers.push(warriorCombat);
             }
 
             const motor = squadNode.addComponent(SquadMotor);
@@ -185,6 +190,19 @@ export class SquadRenderer {
                 mapHeight,
                 warriors,
             });
+            for (const warriorCombat of warriorCombatControllers) {
+                warriorCombat.setup({
+                    unitId: warriorCombat.id,
+                    squadMotor: motor,
+                    motor: warriorCombat.getComponent(WarriorMotor)!,
+                    animator: warriorCombat.getComponent(WarriorAnimator)!,
+                    health: warriorCombat.getComponent(HealthComponent)!,
+                    stats: warriorCombat.getComponent(CombatStats)!,
+                    hub: this.combatEventHub,
+                });
+            }
+            const combat = squadNode.addComponent(SquadCombatController);
+            combat.setup(squad.id, motor, warriorCombatControllers);
 
             const engagement = squadNode.addComponent(SquadEngagementController);
             engagement.setup({
@@ -217,6 +235,7 @@ export class SquadRenderer {
                 homeRestCell,
                     homeBounds,
                     monsterRegistry: this.monsterRegistry,
+                    combat,
                 });
 
             handles.set(squad.id, {
@@ -229,6 +248,8 @@ export class SquadRenderer {
                 warriorMotors,
                 warriorStats: warriorCombatStats,
                 warriorHealth,
+                warriorCombatControllers,
+                combat,
             });
         }
 

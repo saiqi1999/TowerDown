@@ -951,3 +951,11 @@ Slime 贴图由项目使用者绑定到 `MapRoot/MainMapController`：
 - `slimeAttackTexture`
 
 两张贴图规格为 64x64、4x4 帧、单帧 16x16，使用 Point/Nearest 过滤并关闭 Mipmap。
+
+当前怪物战斗采用 v2 架构：
+
+- 不使用 `CombatEncounter`、`CombatPosition` 或战斗 Slot
+- `MonsterGroupController` 只管理 Guard、参与 Squad、Leash 和 Target Claim
+- `WarriorCombatController` 与 `MonsterCombatController` 各自负责选敌、Direct Approach、攻击和退出
+- 战斗位置由单位基于目标实时坐标计算，不进入 `NavigationGrid` Occupancy
+- `SquadEngagementController` 的 Interaction Slot 仅用于普通资源交互，不参与怪物战斗

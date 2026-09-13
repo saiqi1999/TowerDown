@@ -35,11 +35,7 @@ import { TERRAIN_SPRITE_FRAME_FALLBACK_UUID, TERRAIN_SPRITE_FRAME_UUID } from '.
 import { ResourceHudView } from '../ui/ResourceHudView';
 import { MonsterGroupRenderer } from '../monster/MonsterGroupRenderer';
 import { STATIC_MONSTER_GROUPS } from '../monster/StaticMonsterGroups';
-import { CombatEncounterManager } from '../combat/CombatEncounterManager';
 import { MonsterRuntimeRegistry } from '../monster/MonsterRuntimeRegistry';
-import { SquadCombatController } from '../squad/SquadCombatController';
-import { WarriorCombatantAdapter } from '../squad/WarriorCombatantAdapter';
-import { CombatEncounterState } from '../combat/CombatEncounter';
 
 const { ccclass, property } = _decorator;
 
@@ -85,9 +81,7 @@ export class MainMapController extends Component {
     private worldObjectRenderer: WorldObjectRenderer | null = null;
     private squadRenderer: SquadRenderer | null = null;
     private combatEventHub: CombatEventHub | null = null;
-    private encounterManager: CombatEncounterManager | null = null;
     private monsterRegistry: MonsterRuntimeRegistry | null = null;
-    private readonly squadCombatControllers = new Map<string, SquadCombatController>();
 
     start(): void {
         void this.bootstrap();
@@ -167,7 +161,6 @@ export class MainMapController extends Component {
         this.friendlyHealthBarTexture = friendlyHealthBarTexture;
         this.resourceHealthBarTexture = resourceHealthBarTexture;
         this.combatEventHub = new CombatEventHub();
-        this.encounterManager = new CombatEncounterManager(this.combatEventHub);
         this.monsterRegistry = new MonsterRuntimeRegistry();
         const worldObjectRegistry = new WorldObjectRuntimeRegistry(STATIC_WORLD_OBJECTS);
         const resourceInventory = new ResourceInventory();
@@ -244,9 +237,11 @@ export class MainMapController extends Component {
         );
         for (const handle of squadHandles.values()) {
             handle.brain.setGuardEncounterRequester((squadId, objectId) =>
-                this.beginGuardEncounter(squadId, objectId, squadHandles));
+                this.beginGuardCombat(squadId, objectId, squadHandles));
             handle.brain.setGuardRetreatRequester((_squadId, objectId) => {
-                this.monsterRegistry?.getByGuardedObject(objectId)?.retreat();
+                const group = this.monsterRegistry?.getByGuardedObject(objectId);
+                group?.markSquadRetreating(handle.id);
+                handle.combat.requestRetreat();
             });
         }
 
@@ -271,42 +266,17 @@ export class MainMapController extends Component {
         resourceHud.setup(resourceInventory);
     }
 
-    private beginGuardEncounter(
+    private beginGuardCombat(
         squadId: string,
         guardedObjectId: string,
         squadHandles: ReadonlyMap<string, import('../squad/SquadTypes').SquadRuntimeHandle>,
     ): boolean {
-        if (!this.encounterManager || !this.monsterRegistry) return false;
+        if (!this.monsterRegistry) return false;
         const group = this.monsterRegistry.getByGuardedObject(guardedObjectId);
         const squad = squadHandles.get(squadId);
         if (!group || !squad || group.getState() === 3) return false;
-        const encounter = this.encounterManager.create(`${group.data.id}:${squadId}`);
-        if (!group.activate(encounter)) return false;
-        const squadCombat = new SquadCombatController();
-        const warriorAdapters = squad.warriorHealth.map((health, index) =>
-            new WarriorCombatantAdapter(
-                `${squadId}/warrior_${index}`,
-                health,
-                squad.warriorStats[index]!,
-                squad.motor,
-                squad.warriorMotors[index]!,
-            ));
-        squadCombat.begin(encounter, warriorAdapters);
-        for (const monster of this.monsterRegistry.getMembersForGroup(group)) {
-            encounter.addCombatant(monster);
-            monster.bindAttackImpact(encounter);
-        }
-        encounter.subscribeState((state) => {
-            if (state === CombatEncounterState.Victory) {
-                squad.brain.resumeTargetAfterGuardVictory();
-            }
-        });
-        this.squadCombatControllers.set(squadId, squadCombat);
+        squad.combat.beginGuardCombat(group);
         return true;
-    }
-
-    update(dt: number): void {
-        this.encounterManager?.update(dt);
     }
 
     private loadAtlasSpriteFrame(): Promise<SpriteFrame> {

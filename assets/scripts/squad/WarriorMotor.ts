@@ -49,6 +49,9 @@ export class WarriorMotor extends Component {
     }
 
     public moveToLocalGridOffset(offset: GridPoint): void {
+        if (Math.hypot(offset.x - this.targetLocalGridOffset.x, offset.y - this.targetLocalGridOffset.y) < 0.02) {
+            return;
+        }
         this.targetLocalGridOffset = {
             x: offset.x,
             y: offset.y,
