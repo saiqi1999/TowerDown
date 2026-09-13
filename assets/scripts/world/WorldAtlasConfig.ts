@@ -53,6 +53,13 @@ export const WORLD_VISUALS: Record<WorldVisualId, WorldVisualDefinition> = {
         w: 1,
         h: 1,
     },
+    [WorldVisualId.GoldOreSmall]: {
+        atlas: WorldAtlasKey.Nature,
+        col: 4,
+        row: 14,
+        w: 1,
+        h: 1,
+    },
 };
 
 export function getWorldVisualDefinition(visualId: WorldVisualId): WorldVisualDefinition {

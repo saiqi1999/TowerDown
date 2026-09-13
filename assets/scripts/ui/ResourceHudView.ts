@@ -14,7 +14,7 @@ export class ResourceHudView extends Component {
     public setup(inventory: ResourceInventory): void {
         const transform = this.node.getComponent(UITransform)
             ?? this.node.addComponent(UITransform);
-        transform.setContentSize(520, 42);
+        transform.setContentSize(680, 42);
         this.node.setPosition(0, 320, 0);
         this.label = this.node.getComponent(Label) ?? this.node.addComponent(Label);
         this.label.fontSize = 20;
@@ -33,7 +33,7 @@ export class ResourceHudView extends Component {
 
     private render(snapshot: ResourceInventorySnapshot): void {
         if (this.label) {
-            this.label.string = `木材 ${snapshot.wood}    石材 ${snapshot.stone}    食物 ${snapshot.food}`;
+            this.label.string = `木材 ${snapshot.wood}    石材 ${snapshot.stone}    食物 ${snapshot.food}    黄金 ${snapshot.gold}`;
         }
     }
 }

@@ -9,6 +9,7 @@ const RESOURCE_RUNTIME_DEFINITIONS: Record<ResourceType, ResourceRuntimeDefiniti
     [ResourceType.Wood]: { maxHealth: 20, yieldPerDamage: 1 },
     [ResourceType.Stone]: { maxHealth: 20, yieldPerDamage: 1 },
     [ResourceType.Food]: { maxHealth: 20, yieldPerDamage: 1 },
+    [ResourceType.Gold]: { maxHealth: 20, yieldPerDamage: 1 },
 };
 
 export function getResourceRuntimeDefinition(

@@ -33,6 +33,8 @@ import { MapRenderer } from './MapRenderer';
 import { STATIC_MAP } from './StaticMap';
 import { TERRAIN_SPRITE_FRAME_FALLBACK_UUID, TERRAIN_SPRITE_FRAME_UUID } from './TerrainAtlas';
 import { ResourceHudView } from '../ui/ResourceHudView';
+import { MonsterGroupRenderer } from '../monster/MonsterGroupRenderer';
+import { STATIC_MONSTER_GROUPS } from '../monster/StaticMonsterGroups';
 
 const { ccclass, property } = _decorator;
 
@@ -67,6 +69,12 @@ export class MainMapController extends Component {
 
     @property(Texture2D)
     public resourceHealthBarTexture: Texture2D | null = null;
+
+    @property(Texture2D)
+    public slimeMoveTexture: Texture2D | null = null;
+
+    @property(Texture2D)
+    public slimeAttackTexture: Texture2D | null = null;
 
     private mapRenderer: MapRenderer | null = null;
     private worldObjectRenderer: WorldObjectRenderer | null = null;
@@ -137,6 +145,8 @@ export class MainMapController extends Component {
             this.resourceHealthBarTexture,
             'resourceHealthBarTexture',
         );
+        const slimeMoveTexture = this.requireInspectorTexture(this.slimeMoveTexture, 'slimeMoveTexture');
+        const slimeAttackTexture = this.requireInspectorTexture(this.slimeAttackTexture, 'slimeAttackTexture');
 
         this.structureRoot = structureRoot;
         this.resourceRoot = resourceRoot;
@@ -152,6 +162,7 @@ export class MainMapController extends Component {
         const worldObjectRegistry = new WorldObjectRuntimeRegistry(STATIC_WORLD_OBJECTS);
         const resourceInventory = new ResourceInventory();
         const feedbackRoot = this.getOrCreateChild(mapRoot, 'WorldFeedbackRoot');
+        const monsterRoot = this.getOrCreateChild(actorRoot, 'MonsterRoot');
         const damagePopupSpawner = new DamagePopupSpawner(feedbackRoot);
 
         this.mapRenderer = new MapRenderer(tileRoot, atlasSpriteFrame);
@@ -181,6 +192,15 @@ export class MainMapController extends Component {
             STATIC_MAP[0]?.length ?? 0,
             STATIC_MAP.length,
         );
+        new MonsterGroupRenderer(
+            monsterRoot,
+            slimeMoveTexture,
+            slimeAttackTexture,
+            friendlyHealthBarTexture,
+            hitFlashMaterial,
+            this.combatEventHub,
+            damagePopupSpawner,
+        ).render(STATIC_MONSTER_GROUPS, worldObjectRegistry.getAll(), STATIC_MAP[0]?.length ?? 0, STATIC_MAP.length);
 
         const navigator = new WorldNavigator(
             navigationGrid,

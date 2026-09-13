@@ -812,6 +812,8 @@
       "__uuid__": "86834bfa-431a-442e-ab7a-22f1df29ccc9@6c48a",
       "__expectedType__": "cc.Texture2D"
     },
+    "slimeMoveTexture": null,
+    "slimeAttackTexture": null,
     "_id": "76CRmaIWFFCqJaoF9N5QdR"
   },
   {

@@ -7,6 +7,7 @@ export enum ResourceType {
     Wood = 0,
     Stone = 1,
     Food = 2,
+    Gold = 3,
 }
 
 export enum WorldVisualId {
@@ -14,6 +15,7 @@ export enum WorldVisualId {
     TreeGreen = 1,
     StoneGray = 2,
     FoodPlantRed = 3,
+    GoldOreSmall = 4,
 }
 
 export interface WorldObjectData {

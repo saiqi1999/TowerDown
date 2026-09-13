@@ -45,4 +45,12 @@ export const STATIC_WORLD_OBJECTS: WorldObjectData[] = [
         gridX: 31,
         gridY: 17,
     },
+    {
+        id: 'gold_01',
+        kind: WorldObjectKind.Resource,
+        resourceType: ResourceType.Gold,
+        visualId: WorldVisualId.GoldOreSmall,
+        gridX: 17,
+        gridY: 6,
+    },
 ];

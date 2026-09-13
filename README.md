@@ -936,3 +936,18 @@ Feedback
 ```
 
 目标不是为当前“4 个剑士砍资源”写最少代码，而是让这套基础以后可以继续承载：**多 Squad、群怪 AI、兵种差异、远程攻击、资源采集、怪物受击、建筑战斗和更完整的自动战斗系统**。
+# TowerDown
+
+当前运行时已包含：
+
+- Grid / A* / Squad Command / Warrior Formation
+- Health / Damage / Damage Popup / Hit Flash
+- Wood、Stone、Food、Gold 资源与 HUD
+- Gold 的 3 只 Slime Guard 数据、运行时生成与单体生命/受击组件
+
+Slime 贴图由项目使用者绑定到 `MapRoot/MainMapController`：
+
+- `slimeMoveTexture`
+- `slimeAttackTexture`
+
+两张贴图规格为 64x64、4x4 帧、单帧 16x16，使用 Point/Nearest 过滤并关闭 Mipmap。

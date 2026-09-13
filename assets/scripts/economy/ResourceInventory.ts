@@ -4,6 +4,7 @@ export interface ResourceInventorySnapshot {
     wood: number;
     stone: number;
     food: number;
+    gold: number;
 }
 
 export type ResourceInventoryListener = (
@@ -15,6 +16,7 @@ export class ResourceInventory {
         [ResourceType.Wood, 0],
         [ResourceType.Stone, 0],
         [ResourceType.Food, 0],
+        [ResourceType.Gold, 0],
     ]);
     private readonly listeners = new Set<ResourceInventoryListener>();
 
@@ -56,6 +58,7 @@ export class ResourceInventory {
             wood: this.get(ResourceType.Wood),
             stone: this.get(ResourceType.Stone),
             food: this.get(ResourceType.Food),
+            gold: this.get(ResourceType.Gold),
         };
     }
 
