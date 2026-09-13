@@ -39,28 +39,106 @@ export class WarriorCombatController extends Component implements CombatUnitRef 
     public enterGuardCombat(group: MonsterGroupController): void { if (!this.isAlive()) return; this.group = group; this.target = null; this.state = WarriorCombatState.AcquiringTarget; }
     public exitCombat(): void { this.releaseTarget(); this.motor.stop(); this.animator.playIdle(); this.state = this.isAlive() ? WarriorCombatState.Inactive : WarriorCombatState.Dead; this.group = null; }
     public getCombatState(): WarriorCombatState { return this.state; }
-    public update(dt: number): void {
-        if (!this.isAlive() || !this.group || this.state === WarriorCombatState.Inactive || this.state === WarriorCombatState.Dead) return;
-        if (!this.target || !this.target.isAlive()) {
-            this.releaseTarget();
-            const next = this.group.acquireMonsterTarget(this.id, this.getWorldGridPosition());
-            if (!next) { this.state = WarriorCombatState.AcquiringTarget; return; }
-            this.target = next; this.group.claimWarriorTarget(this.id, next.id); this.state = WarriorCombatState.Approaching;
-        }
-        const current = this.getWorldGridPosition();
-        const targetPosition = this.target.getWorldGridPosition();
-        const currentDistance = distance(current, targetPosition);
-        const attackRange = this.stats.getAttackRangeCells();
-        if (currentDistance <= attackRange) {
-            this.motor.stop(); this.animator.playAttack(resolveFacing(current, targetPosition)); this.state = WarriorCombatState.Attacking;
-        } else if (this.state !== WarriorCombatState.Attacking || currentDistance > attackRange + 0.1) {
-            const desired = moveTargetAtDistance(current, targetPosition, this.stats.getPreferredCombatDistanceCells());
-            const squadPosition = this.squadMotor.getGridPosition();
-            this.motor.moveToLocalGridOffset({ x: desired.x - squadPosition.x, y: desired.y - squadPosition.y });
-            this.state = WarriorCombatState.Approaching;
-        }
-        void dt;
+    // public update(dt: number): void {
+    //     if (!this.isAlive() || !this.group || this.state === WarriorCombatState.Inactive || this.state === WarriorCombatState.Dead) return;
+    //     if (!this.target || !this.target.isAlive()) {
+    //         this.releaseTarget();
+    //         const next = this.group.acquireMonsterTarget(this.id, this.getWorldGridPosition());
+    //         if (!next) { this.state = WarriorCombatState.AcquiringTarget; return; }
+    //         this.target = next; this.group.claimWarriorTarget(this.id, next.id); this.state = WarriorCombatState.Approaching;
+    //     }
+    //     const current = this.getWorldGridPosition();
+    //     const targetPosition = this.target.getWorldGridPosition();
+    //     const currentDistance = distance(current, targetPosition);
+    //     const attackRange = this.stats.getAttackRangeCells();
+    //     if (currentDistance <= attackRange) {
+    //         this.motor.stop(); this.animator.playAttack(resolveFacing(current, targetPosition)); this.state = WarriorCombatState.Attacking;
+    //     } else if (this.state !== WarriorCombatState.Attacking || currentDistance > attackRange + 0.1) {
+    //         const desired = moveTargetAtDistance(current, targetPosition, this.stats.getPreferredCombatDistanceCells());
+    //         const squadPosition = this.squadMotor.getGridPosition();
+    //         this.motor.moveToLocalGridOffset({ x: desired.x - squadPosition.x, y: desired.y - squadPosition.y });
+    //         this.state = WarriorCombatState.Approaching;
+    //     }
+    //     void dt;
+    // }
+    update(dt: number): void {
+    if (
+        !this.isAlive()
+        || !this.group
+        || this.state === WarriorCombatState.Inactive
+        || this.state === WarriorCombatState.Dead
+    ) {
+        return;
     }
+
+    // 1. Target 不存在或死亡 → 重新找最近目标
+    if (!this.target || !this.target.isAlive()) {
+        this.releaseTarget();
+
+        const next = this.group.acquireMonsterTarget(
+            this.id,
+            this.getWorldGridPosition(),
+        );
+
+        if (!next) {
+            this.state = WarriorCombatState.AcquiringTarget;
+            return;
+        }
+
+        this.target = next;
+        this.state = WarriorCombatState.Approaching;
+    }
+
+    const current = this.getWorldGridPosition();
+    const targetPosition = this.target.getWorldGridPosition();
+    const currentDistance = distance(current, targetPosition);
+
+    const attackRange = this.stats.getAttackRangeCells();
+    const attackExitRange = attackRange + 0.1;
+
+    // 2. Attack hysteresis
+    const shouldAttack =
+        this.state === WarriorCombatState.Attacking
+            ? currentDistance <= attackExitRange
+            : currentDistance <= attackRange;
+
+    if (shouldAttack) {
+        const direction = resolveFacing(
+            current,
+            targetPosition,
+        );
+
+        // 只在第一次进入 Attack 时 stop
+        if (this.state !== WarriorCombatState.Attacking) {
+            this.motor.stop();
+            this.state = WarriorCombatState.Attacking;
+        }
+
+        // 已经 Attack 时不会重新开始动画，
+        // 一轮攻击结束后会自动开启下一轮
+        this.animator.playAttack(direction);
+        return;
+    }
+
+    // 3. 不在攻击距离 → 追目标
+    const desired = moveTargetAtDistance(
+        current,
+        targetPosition,
+        this.stats.getPreferredCombatDistanceCells(),
+    );
+
+    const squadPosition =
+        this.squadMotor.getGridPosition();
+
+    this.motor.moveToLocalGridOffset({
+        x: desired.x - squadPosition.x,
+        y: desired.y - squadPosition.y,
+    });
+
+    this.state = WarriorCombatState.Approaching;
+
+    void dt;
+}
     private releaseTarget(): void { if (this.target && this.group) this.group.releaseWarriorTarget(this.id, this.target.id); this.target = null; }
     private die(): void { this.releaseTarget(); this.motor.stop(); this.animator.playIdle(); this.state = WarriorCombatState.Dead; }
     private onImpact(): void {

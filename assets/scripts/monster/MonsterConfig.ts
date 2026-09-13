@@ -13,7 +13,7 @@ export interface MonsterRuntimeDefinition {
 
 const DEFINITIONS: Record<MonsterType, MonsterRuntimeDefinition> = {
     [MonsterType.BlueSlime]: {
-        maxHealth: 80,
+        maxHealth: 20,
         attackDamage: 1,
         attackRangeCells: 0.85,
         preferredCombatDistanceCells: 0.75,
