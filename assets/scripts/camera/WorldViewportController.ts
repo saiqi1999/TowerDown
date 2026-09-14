@@ -163,28 +163,58 @@ export class WorldViewportController extends Component {
             this.previousDragLocation = null;
         }
     }
-
     private onMouseMove(event: EventMouse): void {
-        const location = event.getLocation();
-        this.pointerUiPosition = new Vec2(location.x, location.y);
-        if (!this.dragging || !this.previousDragLocation) return;
-        const dx = location.x - this.previousDragLocation.x;
-        const dy = location.y - this.previousDragLocation.y;
-        if (Math.abs(dx) + Math.abs(dy) >= WORLD_VIEW_DRAG_THRESHOLD) {
-            this.panByCameraDelta(-dx, -dy);
-        }
-        this.previousDragLocation = new Vec2(location.x, location.y);
+    const uiLocation = event.getUILocation();
+
+    this.pointerUiPosition = new Vec2(
+        uiLocation.x,
+        uiLocation.y,
+    );
+
+    if (!this.dragging) {
+        return;
     }
+
+    const delta = event.getUIDelta();
+
+    if (
+        Math.abs(delta.x) + Math.abs(delta.y)
+        >= WORLD_VIEW_DRAG_THRESHOLD
+    ) {
+        // Drag 时地图跟着鼠标移动
+        this.panByCameraDelta(
+            -delta.x,
+            -delta.y,
+        );
+    }
+}
 
     private onMouseDown(event: EventMouse): void {
-        const location = event.getLocation();
-        this.pointerUiPosition = new Vec2(location.x, location.y);
-        if (this.isPointOverExcludedUi(this.pointerUiPosition)) return;
-        if (event.getButton() === EventMouse.BUTTON_MIDDLE || (event.getButton() === EventMouse.BUTTON_LEFT && this.spacePressed)) {
-            this.dragging = true;
-            this.previousDragLocation = new Vec2(location.x, location.y);
-        }
+    const uiLocation = event.getUILocation();
+
+    this.pointerUiPosition = new Vec2(
+        uiLocation.x,
+        uiLocation.y,
+    );
+
+    if (
+        this.isPointOverExcludedUi(
+            this.pointerUiPosition,
+        )
+    ) {
+        return;
     }
+
+    if (
+        event.getButton() === EventMouse.BUTTON_MIDDLE
+        || (
+            event.getButton() === EventMouse.BUTTON_LEFT
+            && this.spacePressed
+        )
+    ) {
+        this.dragging = true;
+    }
+}
 
     private onMouseUp(): void {
         this.dragging = false;
