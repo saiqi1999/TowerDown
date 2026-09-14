@@ -22,10 +22,10 @@ export const STATIC_WORLD_OBJECTS: WorldObjectData[] = [
         gridY: 5,
     },
     {
-        id: 'wood_02',
+        id: 'gold_02',
         kind: WorldObjectKind.Resource,
-        resourceType: ResourceType.Wood,
-        visualId: WorldVisualId.TreeGreen,
+        resourceType: ResourceType.Gold,
+        visualId: WorldVisualId.GoldOreSmall,
         gridX: 30,
         gridY: 5,
     },
