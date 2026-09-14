@@ -17,9 +17,9 @@ export class BuildingRenderer {
     constructor(private readonly root: Node, private readonly factory: BuildingSpriteFrameFactory, private readonly mapWidth: number, private readonly mapHeight: number) {}
     public create(instance: BuildingInstanceData, definition: BuildingDefinition): Node {
         const node = new Node(`Building_${instance.id}`); node.setParent(this.root); node.layer = this.root.layer;
-        node.addComponent(UITransform).setContentSize(definition.visual.w * GRID_SOURCE_SIZE, definition.visual.h * GRID_SOURCE_SIZE);
+        node.addComponent(UITransform).setContentSize(definition.visualWidthPixels, definition.visualHeightPixels);
         const sprite = node.addComponent(Sprite); sprite.sizeMode = Sprite.SizeMode.CUSTOM; sprite.spriteFrame = this.factory.getFrame(definition);
-        node.setScale(GRID_RENDER_SCALE, GRID_RENDER_SCALE, 1);
+        node.setScale(definition.visualScale, definition.visualScale, 1);
         node.setPosition(gridRectToWorldCenter(instance.gridX, instance.gridY, definition.footprintW, definition.footprintH, this.mapWidth, this.mapHeight));
         return node;
     }

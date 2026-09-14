@@ -15,12 +15,18 @@ import { type ResourceType } from '../world/WorldObjectTypes';
 
 export type ResourceCost = Partial<Record<ResourceType, number>>;
 export enum BuildingCategory { Economy = 0, Research = 1, Defense = 2 }
+export enum BuildingVisualId {
+    StorageHouse = 'storage_house_01',
+    LumberjackHouse = 'lumberjack_house_01',
+    Barracks = 'barracks_01',
+    BlacksmithHouse = 'blacksmith_house_01',
+}
 export interface BuildingVisualDefinition { col: number; row: number; w: number; h: number; }
 export interface BuildingDefinition {
     id: string; displayName: string; category: BuildingCategory;
-    visual: BuildingVisualDefinition; footprintW: number; footprintH: number;
+    visualId: BuildingVisualId; visual: BuildingVisualDefinition; visualWidthPixels: number; visualHeightPixels: number; visualScale: number; footprintW: number; footprintH: number;
     cost: ResourceCost; allowedTerrain: readonly TerrainType[];
-    blocksNavigation: boolean; eraRequired: number; effectIds: readonly string[];
+    blocksNavigation: boolean; eraRequired: number; effectIds: readonly string[]; shortEffectText?: string;
 }
 export interface BuildingInstanceData { id: string; definitionId: string; gridX: number; gridY: number; }
 export enum PlacementInvalidReason {

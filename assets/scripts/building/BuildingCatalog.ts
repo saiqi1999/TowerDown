@@ -10,13 +10,41 @@
  */
 import { TerrainType } from '../map/MapTypes';
 import { ResourceType } from '../world/WorldObjectTypes';
-import { type BuildingDefinition } from './BuildingTypes';
+import { BuildingCategory, BuildingVisualId, type BuildingDefinition } from './BuildingTypes';
+
+const BUILDING_VISUAL_PIXELS = 80;
+const BUILDING_VISUAL_SCALE = 1;
 
 const DEFINITIONS: readonly BuildingDefinition[] = [
-    { id: 'storage_pot_01', displayName: 'Storage', category: 0, visual: { col: 29, row: 15, w: 1, h: 1 }, footprintW: 1, footprintH: 1, cost: { [ResourceType.Wood]: 2 }, allowedTerrain: [TerrainType.Dirt], blocksNavigation: true, eraRequired: 0, effectIds: [] },
-    { id: 'supply_sack_01', displayName: 'Supply', category: 0, visual: { col: 30, row: 15, w: 1, h: 1 }, footprintW: 1, footprintH: 1, cost: { [ResourceType.Wood]: 2, [ResourceType.Food]: 1 }, allowedTerrain: [TerrainType.Dirt], blocksNavigation: true, eraRequired: 0, effectIds: [] },
-    { id: 'ritual_tent_01', displayName: 'Ritual', category: 1, visual: { col: 29, row: 17, w: 1, h: 1 }, footprintW: 1, footprintH: 1, cost: { [ResourceType.Wood]: 2, [ResourceType.Gold]: 1 }, allowedTerrain: [TerrainType.Dirt], blocksNavigation: true, eraRequired: 0, effectIds: [] },
-    { id: 'kiln_01', displayName: 'Kiln', category: 0, visual: { col: 30, row: 17, w: 1, h: 1 }, footprintW: 1, footprintH: 1, cost: { [ResourceType.Wood]: 2, [ResourceType.Stone]: 2 }, allowedTerrain: [TerrainType.Dirt], blocksNavigation: true, eraRequired: 0, effectIds: [] },
+    {
+        id: 'storage_house_01', displayName: 'Storage', category: BuildingCategory.Economy,
+        visualId: BuildingVisualId.StorageHouse, visual: { col: 29, row: 15, w: 2, h: 2 },
+        visualWidthPixels: BUILDING_VISUAL_PIXELS, visualHeightPixels: BUILDING_VISUAL_PIXELS, visualScale: BUILDING_VISUAL_SCALE,
+        footprintW: 2, footprintH: 2, cost: { [ResourceType.Wood]: 10, [ResourceType.Stone]: 10 },
+        allowedTerrain: [TerrainType.Dirt], blocksNavigation: true, eraRequired: 0, effectIds: [],
+    },
+    {
+        id: 'lumberjack_house_01', displayName: 'Lumberjack', category: BuildingCategory.Economy,
+        visualId: BuildingVisualId.LumberjackHouse, visual: { col: 31, row: 15, w: 2, h: 2 },
+        visualWidthPixels: BUILDING_VISUAL_PIXELS, visualHeightPixels: BUILDING_VISUAL_PIXELS, visualScale: BUILDING_VISUAL_SCALE,
+        footprintW: 2, footprintH: 2, cost: { [ResourceType.Wood]: 15, [ResourceType.Food]: 5 },
+        allowedTerrain: [TerrainType.Dirt], blocksNavigation: true, eraRequired: 0, effectIds: [],
+    },
+    {
+        id: 'barracks_01', displayName: 'Barracks', category: BuildingCategory.Defense,
+        visualId: BuildingVisualId.Barracks, visual: { col: 29, row: 17, w: 2, h: 2 },
+        visualWidthPixels: BUILDING_VISUAL_PIXELS, visualHeightPixels: BUILDING_VISUAL_PIXELS, visualScale: BUILDING_VISUAL_SCALE,
+        footprintW: 2, footprintH: 2, cost: { [ResourceType.Wood]: 10, [ResourceType.Food]: 10 },
+        allowedTerrain: [TerrainType.Dirt], blocksNavigation: true, eraRequired: 0, effectIds: [],
+    },
+    {
+        id: 'blacksmith_house_01', displayName: 'Blacksmith', category: BuildingCategory.Economy,
+        visualId: BuildingVisualId.BlacksmithHouse, visual: { col: 31, row: 17, w: 2, h: 2 },
+        visualWidthPixels: BUILDING_VISUAL_PIXELS, visualHeightPixels: BUILDING_VISUAL_PIXELS, visualScale: BUILDING_VISUAL_SCALE,
+        footprintW: 2, footprintH: 2, cost: { [ResourceType.Wood]: 5, [ResourceType.Stone]: 10, [ResourceType.Gold]: 5 },
+        allowedTerrain: [TerrainType.Dirt], blocksNavigation: true, eraRequired: 0, effectIds: ['blacksmith_all_player_attack_plus_1'],
+        shortEffectText: '+1 ATK',
+    },
 ];
 export function getBuildingDefinition(id: string): BuildingDefinition | null { return DEFINITIONS.find((definition) => definition.id === id) ?? null; }
 export function getAllBuildingDefinitions(): readonly BuildingDefinition[] { return DEFINITIONS; }

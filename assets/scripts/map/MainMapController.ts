@@ -63,6 +63,10 @@ import { getWorldVisualDefinition } from '../world/WorldAtlasConfig';
 import { BuildingUiAssetLoader } from '../building/BuildingUiAssetLoader';
 import { BuildCardStripController } from '../building/BuildCardStripController';
 import { WorldViewportController } from '../camera/WorldViewportController';
+import { CombatStatModifierRegistry } from '../combat/CombatStatModifierRegistry';
+import { BuildingVisualLibrary } from '../building/BuildingVisualLibrary';
+import { BuildingEffectSystem } from '../building/effects/BuildingEffectSystem';
+import { validateBuildingEffectReferences } from '../building/effects/BuildingEffectCatalog';
 
 const { ccclass, property } = _decorator;
 
@@ -182,6 +186,9 @@ export class MainMapController extends Component {
         const slimeMoveTexture = this.requireInspectorTexture(this.slimeMoveTexture, 'slimeMoveTexture');
         const slimeAttackTexture = this.requireInspectorTexture(this.slimeAttackTexture, 'slimeAttackTexture');
         const buildingUiAssets = await new BuildingUiAssetLoader().load();
+        validateBuildingEffectReferences();
+        const playerCombatModifiers = new CombatStatModifierRegistry();
+        const buildingVisualLibrary = await BuildingVisualLibrary.load();
 
         this.structureRoot = structureRoot;
         this.resourceRoot = resourceRoot;
@@ -280,6 +287,7 @@ export class MainMapController extends Component {
             hitFlashMaterial,
             damagePopupSpawner,
             this.monsterRegistry,
+            playerCombatModifiers,
         );
         const squadHandles = this.squadRenderer.render(
             STATIC_SQUADS,
@@ -321,8 +329,10 @@ export class MainMapController extends Component {
         const buildToolNode = this.getOrCreateChild(mapRoot, 'BuildToolController');
         const buildToolController = buildToolNode.getComponent(BuildToolController)
             ?? buildToolNode.addComponent(BuildToolController);
-        const buildingFactory = new BuildingSpriteFrameFactory(buildingTexture);
+        const buildingFactory = new BuildingSpriteFrameFactory(buildingTexture, buildingVisualLibrary);
         const buildingRegistry = new BuildingRuntimeRegistry();
+        const buildingEffectSystem = new BuildingEffectSystem(buildingRegistry, playerCombatModifiers);
+        buildingEffectSystem.setup();
         const buildingRenderer = new BuildingRenderer(
             buildingRoot,
             buildingFactory,
@@ -375,7 +385,7 @@ export class MainMapController extends Component {
             viewportHeight: hudTransform.contentSize.height,
             excludedUiNodes: [cardStripNode],
         });
-        for (const definitionId of ['storage_pot_01', 'supply_sack_01', 'ritual_tent_01', 'kiln_01']) {
+        for (const definitionId of ['storage_house_01', 'lumberjack_house_01', 'barracks_01', 'blacksmith_house_01']) {
             blueprintInventory.unlock(definitionId);
         }
     }

@@ -23,10 +23,10 @@ export class BuildingGhostView {
         private readonly mapHeight: number,
     ) {
         const transform = node.getComponent(UITransform) ?? node.addComponent(UITransform);
-        transform.setContentSize(GRID_SOURCE_SIZE, GRID_SOURCE_SIZE);
+        transform.setContentSize(64, 64);
         this.sprite = node.getComponent(Sprite) ?? node.addComponent(Sprite);
         this.sprite.sizeMode = Sprite.SizeMode.CUSTOM;
-        node.setScale(GRID_RENDER_SCALE, GRID_RENDER_SCALE, 1);
+        node.setScale(1, 1, 1);
         node.active = false;
     }
     public show(definition: BuildingDefinition, snapshot: BuildingPlacementSnapshot): void {

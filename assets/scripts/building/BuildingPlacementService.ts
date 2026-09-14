@@ -40,7 +40,8 @@ export class BuildingPlacementService {
             this.worldCellGrid.claim(instance.id, WorldCellFlag.Building, snapshot.footprint); claimed = true;
             if (definition.blocksNavigation) { for (const cell of snapshot.footprint) this.navigationGrid.setBlocked(cell.x, cell.y); blocked = true; }
             node = this.renderer.create(instance, definition);
-            this.registry.add(instance, node); registered = true;
+            registered = true;
+            this.registry.add(instance, node);
             console.log(`[BuildingPlacement] success id=${instance.id} cell=(${gridX},${gridY})`);
             return { success: true, instance, snapshot };
         } catch (error) {

@@ -35,6 +35,7 @@ import { WarriorCombatController } from './WarriorCombatController';
 import { SquadCombatController } from './SquadCombatController';
 import { WarriorMotor } from './WarriorMotor';
 import { WarriorAttackReceiver } from './WarriorAttackReceiver';
+import { CombatStatModifierRegistry } from '../combat/CombatStatModifierRegistry';
 import {
     SWORD_WARRIOR_ATTACK_DAMAGE,
     SWORD_WARRIOR_MAX_HEALTH,
@@ -67,6 +68,7 @@ export class SquadRenderer {
         private readonly hitFlashMaterial: Material,
         private readonly damagePopupSpawner: DamagePopupSpawner,
         private readonly monsterRegistry?: MonsterRuntimeRegistry,
+        private readonly playerCombatModifiers?: CombatStatModifierRegistry,
     ) {}
 
     public clear(): void {
@@ -152,6 +154,7 @@ export class SquadRenderer {
                     attackDamage: SWORD_WARRIOR_ATTACK_DAMAGE,
                     attackRangeCells: 0.85,
                     preferredCombatDistanceCells: 0.75,
+                    modifierRegistry: this.playerCombatModifiers,
                 });
                 warriorCombatStats.push(stats);
                 const health = warriorNode.addComponent(HealthComponent);

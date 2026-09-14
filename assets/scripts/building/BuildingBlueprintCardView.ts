@@ -49,6 +49,14 @@ export class BuildingBlueprintCardView extends Component {
         const icon = iconNode.getComponent(Sprite) ?? iconNode.addComponent(Sprite);
         icon.sizeMode = Sprite.SizeMode.CUSTOM;
         icon.spriteFrame = factory.getFrame(definition);
+        if (definition.shortEffectText) {
+            const effectNode = this.getChild('EffectLabel');
+            const effectLabel = effectNode.getComponent(Label) ?? effectNode.addComponent(Label);
+            effectLabel.string = definition.shortEffectText;
+            effectLabel.fontSize = 10;
+            effectLabel.color = new Color(40, 110, 40);
+            effectNode.setPosition(0, -48, 0);
+        }
         const nameNode = this.getChild('NameLabel');
         (nameNode.getComponent(UITransform) ?? nameNode.addComponent(UITransform)).setContentSize(62, 18);
         nameNode.setPosition(0, -7, 0);
