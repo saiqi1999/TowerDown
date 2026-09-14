@@ -42,6 +42,7 @@ export class BuildBarItemView extends Component {
         costLabel.string = this.formatCost(definition);
         costLabel.fontSize = BUILD_COST_FONT_SIZE;
         costLabel.lineHeight = 16;
+        costLabel.color = Color.BLACK;
         costLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
         costLabel.verticalAlign = Label.VerticalAlign.CENTER;
         (costNode.getComponent(UITransform) ?? costNode.addComponent(UITransform)).setContentSize(104, 34);
@@ -65,7 +66,7 @@ export class BuildBarItemView extends Component {
                 outline.stroke();
             }
         }
-        if (this.nameLabel) this.nameLabel.color = selected ? new Color(255, 235, 120) : Color.WHITE;
+        if (this.nameLabel) this.nameLabel.color = selected ? new Color(255, 235, 120) : Color.BLACK;
     }
 
     private getChild(name: string): Node {

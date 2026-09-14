@@ -9,12 +9,12 @@
  * 不管理建造状态、资源成本或放置规则。
  */
 export const BUILD_UI_PIXEL_SCALE = 2;
-export const BUILD_BAR_SOURCE_WIDTH = 300;
-export const BUILD_BAR_SOURCE_HEIGHT = 58;
+export const BUILD_BAR_SOURCE_WIDTH = 600;
+export const BUILD_BAR_SOURCE_HEIGHT = 78;
 export const BUILD_BAR_WIDTH = BUILD_BAR_SOURCE_WIDTH * BUILD_UI_PIXEL_SCALE;
 export const BUILD_BAR_HEIGHT = BUILD_BAR_SOURCE_HEIGHT * BUILD_UI_PIXEL_SCALE;
 export const BUILD_BAR_BOTTOM_MARGIN = 16;
-export const ERA_SLOT_WIDTH = 92;
+export const ERA_SLOT_WIDTH = 180;
 export const BUILD_ITEM_WIDTH = 112;
 export const BUILD_ITEM_HEIGHT = 100;
 export const BUILD_ITEM_GAP = 8;
