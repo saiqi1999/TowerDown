@@ -21,9 +21,10 @@ export class BuildToolController extends Component {
     private active = false;
     private definitionId: string | null = null;
     private readonly stateListeners = new Set<BuildToolStateListener>();
-    private inputExcludedNode: Node | null = null;
+    private inputExcludedNodes: readonly Node[] = [];
     public setup(tool: BuildingPlacementTool): void { this.tool = tool; }
-    public setInputExcludedNode(node: Node | null): void { this.inputExcludedNode = node; }
+    public setInputExcludedNode(node: Node | null): void { this.inputExcludedNodes = node ? [node] : []; }
+    public setInputExcludedNodes(nodes: readonly Node[]): void { this.inputExcludedNodes = nodes; }
     public isActive(): boolean { return this.active; }
     public getState(): BuildToolState { return { active: this.active, definitionId: this.definitionId }; }
     public subscribeState(listener: BuildToolStateListener): () => void {
@@ -78,8 +79,10 @@ export class BuildToolController extends Component {
     }
     private isPointerOverExcludedUi(event: Event): boolean {
         const location = (event as Event & { getLocation?: () => { x: number; y: number } }).getLocation?.();
-        const transform = this.inputExcludedNode?.getComponent(UITransform);
-        return !!location && !!transform && transform.getBoundingBoxToWorld().contains(new Vec2(location.x, location.y));
+        const point = new Vec2(location.x, location.y);
+        return this.inputExcludedNodes.some((node) =>
+            node.isValid && node.activeInHierarchy
+            && !!node.getComponent(UITransform)?.getBoundingBoxToWorld().contains(point));
     }
     private notifyState(): void {
         const state = this.getState();

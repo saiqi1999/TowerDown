@@ -1,6 +1,18 @@
+/**
+ * Why this file exists:
+ * MainMapController 是主地图 composition root，负责创建系统并注入它们的依赖。
+ *
+ * Ownership boundary:
+ * 本文件拥有 bootstrap 和系统装配关系。
+ *
+ * This file deliberately does NOT:
+ * 不拥有 Blueprint Card 布局、不拥有 WorldViewport 输入状态、
+ * 不执行 Building Placement 和 Camera UX 规则。
+ */
 import {
     _decorator,
     assetManager,
+    Camera,
     Component,
     Material,
     Node,
@@ -45,10 +57,12 @@ import { BuildingPlacementService } from '../building/BuildingPlacementService';
 import { BuildingGhostView } from '../building/BuildingGhostView';
 import { BuildingPlacementTool } from '../building/BuildingPlacementTool';
 import { BuildToolController } from '../building/BuildToolController';
-import { BuildBarController } from '../building/BuildBarController';
 import { GridPointerProjector } from '../building/GridPointerProjector';
 import { WorldCellFlag, WorldCellGrid } from '../world/WorldCellGrid';
 import { getWorldVisualDefinition } from '../world/WorldAtlasConfig';
+import { BuildingUiAssetLoader } from '../building/BuildingUiAssetLoader';
+import { BuildCardStripController } from '../building/BuildCardStripController';
+import { WorldViewportController } from '../camera/WorldViewportController';
 
 const { ccclass, property } = _decorator;
 
@@ -90,9 +104,6 @@ export class MainMapController extends Component {
     @property(Texture2D)
     public slimeAttackTexture: Texture2D | null = null;
 
-    @property(Texture2D)
-    public buildBarTexture: Texture2D | null = null;
-
     private mapRenderer: MapRenderer | null = null;
     private worldObjectRenderer: WorldObjectRenderer | null = null;
     private squadRenderer: SquadRenderer | null = null;
@@ -106,6 +117,11 @@ export class MainMapController extends Component {
     private async bootstrap(): Promise<void> {
         // MainMapController 作为 composition root 统一创建并注入 CombatEventHub，避免攻击事件链退化成全局单例。
         const mapRoot = this.node;
+        const camera = this.node.parent?.getChildByName('Camera')?.getComponent(Camera)
+            ?? this.node.scene?.getComponentInChildren(Camera);
+        if (!camera) {
+            throw new Error('[MainMapController] Camera is required in scene.');
+        }
         const tileRoot = this.requireChild(mapRoot, 'TileRoot');
         const worldObjectRoot = this.requireChild(mapRoot, 'WorldObjectRoot');
         const structureRoot = this.requireChild(worldObjectRoot, 'StructureRoot');
@@ -165,6 +181,7 @@ export class MainMapController extends Component {
         );
         const slimeMoveTexture = this.requireInspectorTexture(this.slimeMoveTexture, 'slimeMoveTexture');
         const slimeAttackTexture = this.requireInspectorTexture(this.slimeAttackTexture, 'slimeAttackTexture');
+        const buildingUiAssets = await new BuildingUiAssetLoader().load();
 
         this.structureRoot = structureRoot;
         this.resourceRoot = resourceRoot;
@@ -329,21 +346,35 @@ export class MainMapController extends Component {
             STATIC_MAP.length,
         );
         const placementTool = new BuildingPlacementTool(
-            new GridPointerProjector(mapRoot, STATIC_MAP[0]?.length ?? 0, STATIC_MAP.length),
+            new GridPointerProjector(mapRoot, camera, STATIC_MAP[0]?.length ?? 0, STATIC_MAP.length),
             validator,
             service,
             ghost,
         );
         buildToolController.setup(placementTool);
         commandController.setInputBlockedPredicate(() => buildToolController.isActive());
-        const buildBar = new BuildBarController(
-            this.getOrCreateChild(hudRoot, 'BuildBar'),
+        const cardStripNode = this.getOrCreateChild(hudRoot, 'BlueprintCardStrip');
+        const cardStrip = new BuildCardStripController(
+            cardStripNode,
             blueprintInventory,
+            resourceInventory,
             buildingFactory,
             buildToolController,
-            this.buildBarTexture,
+            buildingUiAssets.blueprintCardFrame,
         );
-        buildBar.setup();
+        cardStrip.setup();
+        const viewportNode = this.getOrCreateChild(mapRoot, 'WorldViewportController');
+        const viewport = viewportNode.getComponent(WorldViewportController)
+            ?? viewportNode.addComponent(WorldViewportController);
+        viewport.setup({
+            mapRoot,
+            camera,
+            mapWidthCells: STATIC_MAP[0]?.length ?? 0,
+            mapHeightCells: STATIC_MAP.length,
+            viewportWidth: hudTransform.contentSize.width,
+            viewportHeight: hudTransform.contentSize.height,
+            excludedUiNodes: [cardStripNode],
+        });
         for (const definitionId of ['storage_pot_01', 'supply_sack_01', 'ritual_tent_01', 'kiln_01']) {
             blueprintInventory.unlock(definitionId);
         }
