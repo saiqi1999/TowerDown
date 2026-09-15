@@ -6,6 +6,8 @@ import { createTargetFlagFrames } from './TargetFlagSpriteConfig';
 import { TargetFlagView } from './TargetFlagView';
 import { type SquadRuntimeHandle } from '../squad/SquadTypes';
 import { WorldObjectRuntimeRegistry } from '../world/WorldObjectRuntimeRegistry';
+import { SquadSelectionController } from '../squad/SquadSelectionController';
+import { type SquadPresentation } from '../ui/squad/SquadPresentationConfig';
 
 const { ccclass } = _decorator;
 
@@ -14,6 +16,8 @@ export interface WorldCommandControllerConfig {
     commandRoot: Node;
     worldObjectRegistry: WorldObjectRuntimeRegistry;
     squadHandles: ReadonlyMap<string, SquadRuntimeHandle>;
+    selection: SquadSelectionController;
+    squadPresentationById: ReadonlyMap<string, SquadPresentation>;
     targetFlagTexture: Texture2D;
     mapWidth: number;
     mapHeight: number;
@@ -21,13 +25,14 @@ export interface WorldCommandControllerConfig {
 
 @ccclass('WorldCommandController')
 export class WorldCommandController extends Component {
-    private activeSquadId = 'initial_01';
     private worldObjectRoot: Node | null = null;
     private commandRoot: Node | null = null;
     private mapWidth = 0;
     private mapHeight = 0;
     private worldObjectRegistry: WorldObjectRuntimeRegistry | null = null;
     private squadHandles: ReadonlyMap<string, SquadRuntimeHandle> = new Map();
+    private selection: SquadSelectionController | null = null;
+    private squadPresentationById: ReadonlyMap<string, SquadPresentation> = new Map();
     private flagFrames: SpriteFrame[] = [];
     private readonly targetBySquad = new Map<string, string>();
     private readonly flagBySquad = new Map<string, TargetFlagView>();
@@ -44,6 +49,8 @@ export class WorldCommandController extends Component {
         this.mapHeight = config.mapHeight;
         this.worldObjectRegistry = config.worldObjectRegistry;
         this.squadHandles = config.squadHandles;
+        this.selection = config.selection;
+        this.squadPresentationById = config.squadPresentationById;
         this.flagFrames = createTargetFlagFrames(config.targetFlagTexture);
 
         const views = config.worldObjectRoot.getComponentsInChildren(WorldObjectView);
@@ -70,16 +77,21 @@ export class WorldCommandController extends Component {
         if (this.inputBlockedPredicate?.()) {
             return;
         }
-        const handle = this.squadHandles.get(this.activeSquadId);
+        const activeSquadId = this.selection?.getSelectedSquadId() ?? null;
+        if (!activeSquadId) {
+            console.warn('[WorldCommandController] no selected squad.');
+            return;
+        }
+        const handle = this.squadHandles.get(activeSquadId);
         if (!handle) {
-            console.warn(`[WorldCommandController] active squad missing: ${this.activeSquadId}`);
+            console.warn(`[WorldCommandController] active squad missing: ${activeSquadId}`);
             return;
         }
 
-        const currentTargetId = this.targetBySquad.get(this.activeSquadId);
+        const currentTargetId = this.targetBySquad.get(activeSquadId);
         if (currentTargetId === objectId) {
-            this.targetBySquad.delete(this.activeSquadId);
-            this.flagBySquad.get(this.activeSquadId)?.hide();
+            this.targetBySquad.delete(activeSquadId);
+            this.flagBySquad.get(activeSquadId)?.hide();
             handle.brain.clearCommandAndReturnHome();
             return;
         }
@@ -96,9 +108,9 @@ export class WorldCommandController extends Component {
             return;
         }
 
-        const flag = this.getOrCreateFlag(this.activeSquadId);
+        const flag = this.getOrCreateFlag(activeSquadId);
         const visual = getWorldVisualDefinition(target.visualId);
-        this.targetBySquad.set(this.activeSquadId, objectId);
+        this.targetBySquad.set(activeSquadId, objectId);
         flag.showAtObject(
             target,
             visual,
@@ -122,7 +134,8 @@ export class WorldCommandController extends Component {
         node.layer = this.commandRoot.layer;
 
         const flag = node.addComponent(TargetFlagView);
-        flag.setup(this.flagFrames);
+        const tint = this.squadPresentationById.get(squadId)?.commandColor;
+        flag.setup(this.flagFrames, tint);
         this.flagBySquad.set(squadId, flag);
         return flag;
     }

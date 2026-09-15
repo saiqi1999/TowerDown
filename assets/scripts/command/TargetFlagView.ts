@@ -1,6 +1,7 @@
 import {
     _decorator,
     Component,
+    Color,
     Sprite,
     type SpriteFrame,
     UITransform,
@@ -23,7 +24,7 @@ export class TargetFlagView extends Component {
     private frameTimer = 0;
     private frameDuration = 0.12;
 
-    public setup(frames: SpriteFrame[]): void {
+    public setup(frames: SpriteFrame[], tint: Color = Color.WHITE): void {
         this.frames = frames;
         this.node.setScale(GRID_RENDER_SCALE, GRID_RENDER_SCALE, 1);
 
@@ -32,6 +33,7 @@ export class TargetFlagView extends Component {
 
         this.sprite = this.node.getComponent(Sprite) ?? this.node.addComponent(Sprite);
         this.sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        this.sprite.color = tint;
         this.frameIndex = 0;
         this.frameTimer = 0;
         this.applyFrame();

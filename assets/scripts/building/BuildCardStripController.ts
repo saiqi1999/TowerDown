@@ -42,7 +42,6 @@ export class BuildCardStripController {
         this.blueprintUnsubscribe = this.blueprints.subscribe((ids) => this.render(ids));
         this.toolUnsubscribe = this.tool.subscribeState((state) => this.syncSelected(state));
         this.inventoryUnsubscribe = this.inventory.subscribe((snapshot) => this.syncAffordable(snapshot));
-        this.tool.setInputExcludedNodes([this.root]);
     }
 
     public destroy(): void {

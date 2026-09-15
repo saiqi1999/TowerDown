@@ -79,6 +79,7 @@ export class BuildToolController extends Component {
     }
     private isPointerOverExcludedUi(event: Event): boolean {
         const location = (event as Event & { getLocation?: () => { x: number; y: number } }).getLocation?.();
+        if (!location) return false;
         const point = new Vec2(location.x, location.y);
         return this.inputExcludedNodes.some((node) =>
             node.isValid && node.activeInHierarchy

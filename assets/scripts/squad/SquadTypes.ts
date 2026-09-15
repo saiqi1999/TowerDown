@@ -14,6 +14,13 @@ export enum WarriorVisualId {
     SwordWarrior = 0,
 }
 
+export enum SquadCommandColor {
+    Cyan = 0,
+    Amber = 1,
+    Green = 2,
+    Violet = 3,
+}
+
 export interface CommandResult {
     accepted: boolean;
     reason?: string;
@@ -38,6 +45,8 @@ export interface SquadSpawnData {
     warriorVisualId: WarriorVisualId;
     memberCount: number;
     homeObjectId: string;
+    commandSlot: number;
+    commandColor: SquadCommandColor;
     spawnPoint?: GridPoint;
 }
 

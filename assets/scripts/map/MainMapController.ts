@@ -67,6 +67,10 @@ import { CombatStatModifierRegistry } from '../combat/CombatStatModifierRegistry
 import { BuildingVisualLibrary } from '../building/BuildingVisualLibrary';
 import { BuildingEffectSystem } from '../building/effects/BuildingEffectSystem';
 import { validateBuildingEffectReferences } from '../building/effects/BuildingEffectCatalog';
+import { SquadSelectionController } from '../squad/SquadSelectionController';
+import { SquadUiAssetLoader } from '../ui/squad/SquadUiAssetLoader';
+import { buildSquadPresentationMap } from '../ui/squad/SquadPresentationConfig';
+import { SquadRosterController } from '../ui/squad/SquadRosterController';
 
 const { ccclass, property } = _decorator;
 
@@ -163,10 +167,19 @@ export class MainMapController extends Component {
             WARRIOR_TEXTURE_UUID,
             'warrior texture',
         );
-        const targetFlagTexture = this.requireInspectorTexture(
-            this.targetFlagTexture,
-            'targetFlagTexture',
-        );
+        const squadUiAssets = await new SquadUiAssetLoader().load();
+        const targetFlagTexture = squadUiAssets.targetFlagTexture
+            ?? this.requireInspectorTexture(
+                this.targetFlagTexture,
+                'targetFlagTexture',
+            );
+        const swordWarriorPortrait = squadUiAssets.swordWarriorPortrait;
+        if (!swordWarriorPortrait) {
+            throw new Error('[MainMapController] sword warrior portrait is required.');
+        }
+        const squadPresentationById = buildSquadPresentationMap(STATIC_SQUADS, {
+            swordWarriorPortrait,
+        });
         const warriorAttackTexture = this.requireInspectorTexture(
             this.warriorAttackTexture,
             'warriorAttackTexture',
@@ -294,6 +307,10 @@ export class MainMapController extends Component {
             STATIC_MAP[0]?.length ?? 0,
             STATIC_MAP.length,
         );
+        const selectionNode = this.getOrCreateChild(mapRoot, 'SquadSelectionController');
+        const selection = selectionNode.getComponent(SquadSelectionController)
+            ?? selectionNode.addComponent(SquadSelectionController);
+        selection.setup(STATIC_SQUADS, squadHandles);
         for (const handle of squadHandles.values()) {
             handle.brain.setGuardEncounterRequester((squadId, objectId) =>
                 this.beginGuardCombat(squadId, objectId, squadHandles));
@@ -309,6 +326,8 @@ export class MainMapController extends Component {
             commandRoot,
             worldObjectRegistry,
             squadHandles,
+            selection,
+            squadPresentationById,
             targetFlagTexture,
             mapWidth: STATIC_MAP[0]?.length ?? 0,
             mapHeight: STATIC_MAP.length,
@@ -373,6 +392,18 @@ export class MainMapController extends Component {
             buildingUiAssets.blueprintCardFrame,
         );
         cardStrip.setup();
+        const rosterNode = this.getOrCreateChild(hudRoot, 'SquadRosterRoot');
+        const roster = new SquadRosterController(
+            rosterNode,
+            STATIC_SQUADS,
+            squadHandles,
+            selection,
+            squadPresentationById,
+        );
+        roster.setup();
+        selection.setBeforeUserSelection(() => buildToolController.cancel());
+        const interactionUiNodes = [cardStripNode, rosterNode];
+        buildToolController.setInputExcludedNodes(interactionUiNodes);
         const viewportNode = this.getOrCreateChild(mapRoot, 'WorldViewportController');
         const viewport = viewportNode.getComponent(WorldViewportController)
             ?? viewportNode.addComponent(WorldViewportController);
@@ -383,7 +414,7 @@ export class MainMapController extends Component {
             mapHeightCells: STATIC_MAP.length,
             viewportWidth: hudTransform.contentSize.width,
             viewportHeight: hudTransform.contentSize.height,
-            excludedUiNodes: [cardStripNode],
+            excludedUiNodes: interactionUiNodes,
         });
         for (const definitionId of ['storage_house_01', 'lumberjack_house_01', 'barracks_01', 'blacksmith_house_01']) {
             blueprintInventory.unlock(definitionId);
