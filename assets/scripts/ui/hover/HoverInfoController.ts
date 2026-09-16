@@ -102,10 +102,13 @@ export class HoverInfoController extends Component {
             return;
         }
         const anchorRect = anchorTransform.getBoundingBoxToWorld();
-        if (this.hasPointer && !anchorRect.contains(this.pointer)) {
-            this.hideImmediately();
-            return;
-        }
+        if (
+    this.hasPointer
+    && !anchorTransform.hitTest(this.pointer)
+) {
+    this.hideImmediately();
+    return;
+}
         const size = panel.getSize();
         const result = resolveHoverPlacement(
             anchorRect,
@@ -142,7 +145,7 @@ export class HoverInfoController extends Component {
     }
 
     private onMouseMove(event: EventMouse): void {
-        this.pointer = event.getUILocation();
-        this.hasPointer = true;
-    }
+    event.getLocation(this.pointer);
+    this.hasPointer = true;
+}
 }
