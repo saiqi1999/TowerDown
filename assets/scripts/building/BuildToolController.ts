@@ -1,12 +1,14 @@
 /**
  * Why this file exists:
- * 建造模式需要单一状态拥有者，统一绑定输入并让世界指令知道何时暂停。
+ * Build Mode 需要统一拥有输入状态，并把高频 Pointer Event 转换为每帧一次的
+ * authoritative pointer sample，避免 Ghost 直接被事件频率驱动。
  *
  * Ownership boundary:
- * 本文件拥有 active 状态、当前蓝图和建造输入监听。
+ * 本文件拥有 Build Mode 生命周期、latest pointer screen position、
+ * 输入监听和每帧 Ghost refresh 调度。
  *
  * This file deliberately does NOT:
- * 不判断放置合法性、不直接扣资源、不渲染 BuildBar。
+ * 不做 Grid 投影、不判断 placement 合法性、不扣资源，也不直接设置 Ghost 位置。
  */
 import { _decorator, Component, Event, EventKeyboard, EventMouse, input, Input, KeyCode, Node, UITransform, Vec2 } from 'cc';
 import { BuildingPlacementTool } from './BuildingPlacementTool';
@@ -22,6 +24,7 @@ export class BuildToolController extends Component {
     private definitionId: string | null = null;
     private readonly stateListeners = new Set<BuildToolStateListener>();
     private inputExcludedNodes: readonly Node[] = [];
+    private latestPointerScreenPosition: Vec2 | null = null;
     public setup(tool: BuildingPlacementTool): void { this.tool = tool; }
     public setInputExcludedNode(node: Node | null): void { this.inputExcludedNodes = node ? [node] : []; }
     public setInputExcludedNodes(nodes: readonly Node[]): void { this.inputExcludedNodes = nodes; }
@@ -41,6 +44,9 @@ export class BuildToolController extends Component {
         this.definitionId = definitionId;
         this.active = true;
         this.tool?.setDefinition(definitionId);
+        if (this.latestPointerScreenPosition) {
+            this.tool?.refreshPointer(this.latestPointerScreenPosition);
+        }
         this.notifyState();
     }
     public cancel(): void {
@@ -49,6 +55,14 @@ export class BuildToolController extends Component {
         this.definitionId = null;
         this.tool?.setDefinition(null);
         this.notifyState();
+    }
+    lateUpdate(): void {
+        if (!this.active || !this.latestPointerScreenPosition) return;
+        if (this.isScreenPointOverExcludedUi(this.latestPointerScreenPosition)) {
+            this.tool?.hideGhost();
+            return;
+        }
+        this.tool?.refreshPointer(this.latestPointerScreenPosition);
     }
     onEnable(): void {
         input.on(Input.EventType.MOUSE_MOVE, this.onPointerMove, this);
@@ -64,7 +78,7 @@ export class BuildToolController extends Component {
         input.off(Input.EventType.TOUCH_START, this.onPointerDown, this);
         input.off(Input.EventType.KEY_DOWN, this.onKeyDown, this);
     }
-    private onPointerMove(event: Event): void { if (this.active) this.tool?.handlePointerMove(event); }
+    private onPointerMove(event: Event): void { this.samplePointer(event); }
     private onPointerDown(event: Event): void {
         if (!this.active) return;
         if (event instanceof EventMouse && event.getButton() === EventMouse.BUTTON_RIGHT) {
@@ -72,7 +86,10 @@ export class BuildToolController extends Component {
             return;
         }
         if (this.isPointerOverExcludedUi(event)) return;
-        if (this.tool?.handlePointerDown(event)) this.cancel();
+        const screenPoint = this.samplePointer(event);
+        if (!screenPoint) return;
+        this.tool?.refreshPointer(screenPoint);
+        if (this.tool?.confirmCurrentPlacement()) this.cancel();
     }
     private onKeyDown(event: EventKeyboard): void {
         if (this.active && event.keyCode === KeyCode.ESCAPE) this.cancel();
@@ -80,10 +97,18 @@ export class BuildToolController extends Component {
     private isPointerOverExcludedUi(event: Event): boolean {
         const location = (event as Event & { getLocation?: () => { x: number; y: number } }).getLocation?.();
         if (!location) return false;
-        const point = new Vec2(location.x, location.y);
+        return this.isScreenPointOverExcludedUi(new Vec2(location.x, location.y));
+    }
+    private isScreenPointOverExcludedUi(point: Vec2): boolean {
         return this.inputExcludedNodes.some((node) =>
             node.isValid && node.activeInHierarchy
             && !!node.getComponent(UITransform)?.getBoundingBoxToWorld().contains(point));
+    }
+    private samplePointer(event: Event): Vec2 | null {
+        const location = (event as Event & { getLocation?: () => { x: number; y: number } }).getLocation?.();
+        if (!location) return null;
+        this.latestPointerScreenPosition = new Vec2(location.x, location.y);
+        return this.latestPointerScreenPosition;
     }
     private notifyState(): void {
         const state = this.getState();
