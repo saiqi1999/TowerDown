@@ -50,6 +50,7 @@ export class SquadRosterController {
             if (!handle) return;
             const node = new Node(`SquadCard_${squad.id}`);
             node.setParent(this.root);
+            node.layer = this.root.layer;
             node.setPosition(0, -index * (SQUAD_ROSTER_CARD_HEIGHT + SQUAD_ROSTER_CARD_GAP), 0);
             const view = node.addComponent(SquadRosterItemView);
             view.setup({

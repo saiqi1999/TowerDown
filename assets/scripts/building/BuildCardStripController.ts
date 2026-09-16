@@ -65,6 +65,7 @@ export class BuildCardStripController {
             if (!definition) return;
             const node = new Node(`Card_${id}`);
             node.setParent(this.root);
+            node.layer = this.root.layer;
             node.setPosition(-totalWidth / 2 + BLUEPRINT_CARD_WIDTH / 2 + index * (BLUEPRINT_CARD_WIDTH + BLUEPRINT_CARD_GAP), 0, 0);
             const view = node.addComponent(BuildingBlueprintCardView);
             view.setup(definition, this.factory, this.cardFrame, () => this.tool.select(id), this.hover);
