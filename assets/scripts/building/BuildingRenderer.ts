@@ -13,14 +13,32 @@ import { GRID_RENDER_SCALE, GRID_SOURCE_SIZE } from '../grid/GridConfig';
 import { gridRectToWorldCenter } from '../grid/GridTransform';
 import { type BuildingDefinition, type BuildingInstanceData } from './BuildingTypes';
 import { BuildingSpriteFrameFactory } from './BuildingSpriteFrameFactory';
+import { HoverInfoTarget } from '../ui/hover/HoverInfoTarget';
+import { HoverPlacement, HoverTargetKind, HoverTargetScope } from '../ui/hover/HoverInfoTypes';
+import { type HoverInfoController } from '../ui/hover/HoverInfoController';
 export class BuildingRenderer {
-    constructor(private readonly root: Node, private readonly factory: BuildingSpriteFrameFactory, private readonly mapWidth: number, private readonly mapHeight: number) {}
+    constructor(private readonly root: Node, private readonly factory: BuildingSpriteFrameFactory, private readonly mapWidth: number, private readonly mapHeight: number, private readonly hover: HoverInfoController) {}
     public create(instance: BuildingInstanceData, definition: BuildingDefinition): Node {
         const node = new Node(`Building_${instance.id}`); node.setParent(this.root); node.layer = this.root.layer;
         node.addComponent(UITransform).setContentSize(definition.visualWidthPixels, definition.visualHeightPixels);
         const sprite = node.addComponent(Sprite); sprite.sizeMode = Sprite.SizeMode.CUSTOM; sprite.spriteFrame = this.factory.getFrame(definition);
         node.setScale(definition.visualScale, definition.visualScale, 1);
         node.setPosition(gridRectToWorldCenter(instance.gridX, instance.gridY, definition.footprintW, definition.footprintH, this.mapWidth, this.mapHeight));
+        node.addComponent(HoverInfoTarget).setup({
+            kind: HoverTargetKind.Building,
+            scope: HoverTargetScope.World,
+            preferredPlacement: HoverPlacement.Right,
+            controller: this.hover,
+            getInfo: () => ({
+                title: definition.displayName,
+                rows: [
+                    ...(definition.shortEffectText
+                        ? [{ label: '效果', value: definition.shortEffectText }]
+                        : []),
+                    { label: '占地', value: `${definition.footprintW}×${definition.footprintH}` },
+                ],
+            }),
+        });
         return node;
     }
 }

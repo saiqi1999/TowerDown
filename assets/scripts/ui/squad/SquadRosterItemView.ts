@@ -17,6 +17,11 @@ import {
     SQUAD_ROSTER_CARD_WIDTH,
     SQUAD_ROSTER_SELECTED_OFFSET_X,
 } from './SquadRosterUiConfig';
+import { type SquadRuntimeHandle, type SquadSpawnData } from '../../squad/SquadTypes';
+import { SquadBrainState } from '../../squad/SquadBrain';
+import { HoverInfoTarget } from '../hover/HoverInfoTarget';
+import { HoverPlacement, HoverTargetKind, HoverTargetScope } from '../hover/HoverInfoTypes';
+import { type HoverInfoController } from '../hover/HoverInfoController';
 
 const { ccclass } = _decorator;
 
@@ -33,6 +38,9 @@ export class SquadRosterItemView extends Component {
         commandColor: Color;
         portraitFrame: SpriteFrame;
         onSelect: () => void;
+        squad: SquadSpawnData;
+        handle: SquadRuntimeHandle;
+        hover: HoverInfoController;
     }): void {
         this.commandColor = config.commandColor;
         this.baseX = this.node.position.x;
@@ -77,6 +85,24 @@ export class SquadRosterItemView extends Component {
         const button = this.node.getComponent(Button) ?? this.node.addComponent(Button);
         button.node.off(Button.EventType.CLICK);
         button.node.on(Button.EventType.CLICK, config.onSelect);
+        (this.node.getComponent(HoverInfoTarget) ?? this.node.addComponent(HoverInfoTarget)).setup({
+            kind: HoverTargetKind.Squad,
+            scope: HoverTargetScope.UI,
+            preferredPlacement: HoverPlacement.Right,
+            controller: config.hover,
+            getInfo: () => {
+                const living = config.handle.warriorHealth.filter((health) => !health.isDepleted()).length;
+                const attack = config.handle.warriorStats[0]?.getAttackDamage() ?? 0;
+                return {
+                    title: `Squad ${config.commandSlot}`,
+                    rows: [
+                        { label: '成员', value: `${living} / ${config.squad.memberCount}` },
+                        { label: '攻击', value: String(attack) },
+                        { label: '当前任务', value: this.getStateLabel(config.handle.brain.getState()) },
+                    ],
+                };
+            },
+        });
         this.setSelected(false);
     }
 
@@ -105,5 +131,21 @@ export class SquadRosterItemView extends Component {
         const child = this.node.getChildByName(name) ?? new Node(name);
         if (!child.parent) child.setParent(this.node);
         return child;
+    }
+
+    private getStateLabel(state: SquadBrainState): string {
+        switch (state) {
+        case SquadBrainState.MoveToTarget:
+        case SquadBrainState.EngageTarget:
+        case SquadBrainState.AttackResource:
+            return '采集';
+        case SquadBrainState.GuardCombat:
+            return 'Combat';
+        case SquadBrainState.Reform:
+        case SquadBrainState.ReturnHome:
+            return 'Return Home';
+        default:
+            return 'Idle';
+        }
     }
 }

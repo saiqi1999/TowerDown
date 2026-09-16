@@ -32,6 +32,9 @@ import { WorldObjectView } from './WorldObjectView';
 import { getResourceRuntimeDefinition } from './ResourceRuntimeConfig';
 import { ResourceHarvestComponent } from './ResourceHarvestComponent';
 import { WorldObjectLifecycleController } from './WorldObjectLifecycleController';
+import { HoverInfoTarget } from '../ui/hover/HoverInfoTarget';
+import { HoverPlacement, HoverTargetKind, HoverTargetScope } from '../ui/hover/HoverInfoTypes';
+import { type HoverInfoController } from '../ui/hover/HoverInfoController';
 
 export class WorldObjectRenderer {
     private readonly frameCache = new Map<WorldVisualId, SpriteFrame>();
@@ -48,6 +51,7 @@ export class WorldObjectRenderer {
         private readonly damagePopupSpawner: DamagePopupSpawner,
         private readonly lifecycle: WorldObjectLifecycleController,
         private readonly resourceHealthBarTexture: Texture2D,
+        private readonly hover: HoverInfoController,
     ) {}
 
     public clear(): void {
@@ -134,6 +138,31 @@ export class WorldObjectRenderer {
                     health,
                     damagePopupSpawner: this.damagePopupSpawner,
                     lifecycle: this.lifecycle,
+                });
+                node.addComponent(HoverInfoTarget).setup({
+                    kind: HoverTargetKind.Resource,
+                    scope: HoverTargetScope.World,
+                    preferredPlacement: HoverPlacement.Right,
+                    controller: this.hover,
+                    getInfo: () => ({
+                        title: this.getResourceName(resourceType),
+                        rows: [
+                            { label: '剩余资源', value: `${health.getCurrentHealth()} / ${health.getMaxHealth()}` },
+                            { label: '采集效率', value: `${resourceDefinition.yieldPerDamage} resource / damage` },
+                        ],
+                    }),
+                });
+            } else {
+                node.addComponent(HoverInfoTarget).setup({
+                    kind: HoverTargetKind.Base,
+                    scope: HoverTargetScope.World,
+                    preferredPlacement: HoverPlacement.Right,
+                    controller: this.hover,
+                    getInfo: () => ({
+                        title: 'Base',
+                        subtitle: '文明核心',
+                        footer: '基地被摧毁则 Run 失败（未来）',
+                    }),
                 });
             }
         }
@@ -234,5 +263,9 @@ export class WorldObjectRenderer {
 
     private getTexture(atlas: WorldAtlasKey): Texture2D {
         return atlas === WorldAtlasKey.Buildings ? this.buildingTexture : this.natureTexture;
+    }
+
+    private getResourceName(type: number): string {
+        return ['Wood', 'Stone', 'Food', 'Gold'][type] ?? 'Resource';
     }
 }

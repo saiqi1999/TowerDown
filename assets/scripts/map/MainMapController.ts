@@ -71,6 +71,9 @@ import { SquadSelectionController } from '../squad/SquadSelectionController';
 import { SquadUiAssetLoader } from '../ui/squad/SquadUiAssetLoader';
 import { buildSquadPresentationMap } from '../ui/squad/SquadPresentationConfig';
 import { SquadRosterController } from '../ui/squad/SquadRosterController';
+import { HoverInfoAssetLoader } from '../ui/hover/HoverInfoAssetLoader';
+import { HoverInfoController } from '../ui/hover/HoverInfoController';
+import { HoverInfoPanelView } from '../ui/hover/HoverInfoPanelView';
 
 const { ccclass, property } = _decorator;
 
@@ -199,6 +202,27 @@ export class MainMapController extends Component {
         const slimeMoveTexture = this.requireInspectorTexture(this.slimeMoveTexture, 'slimeMoveTexture');
         const slimeAttackTexture = this.requireInspectorTexture(this.slimeAttackTexture, 'slimeAttackTexture');
         const buildingUiAssets = await new BuildingUiAssetLoader().load();
+        const hoverInfoAssets = await new HoverInfoAssetLoader().load();
+        const hudRoot = this.getOrCreateCanvasChild('HUDRoot');
+        const hudTransform = hudRoot.getComponent(UITransform)
+            ?? hudRoot.addComponent(UITransform);
+        hudTransform.setContentSize(1280, 720);
+        hudTransform.setAnchorPoint(0.5, 0.5);
+        hudRoot.setPosition(0, 0, 0);
+        const hoverLayer = this.getOrCreateChild(hudRoot, 'HoverInfoLayer');
+        const hoverLayerTransform = hoverLayer.getComponent(UITransform)
+            ?? hoverLayer.addComponent(UITransform);
+        hoverLayerTransform.setContentSize(1280, 720);
+        hoverLayerTransform.setAnchorPoint(0.5, 0.5);
+        hoverLayer.setPosition(0, 0, 0);
+        const hoverPanelNode = this.getOrCreateChild(hoverLayer, 'HoverInfoPanel');
+        const hoverPanel = new HoverInfoPanelView(
+            hoverPanelNode,
+            hoverInfoAssets.backgroundFrame,
+        );
+        const hoverInfo = hoverLayer.getComponent(HoverInfoController)
+            ?? hoverLayer.addComponent(HoverInfoController);
+        hoverInfo.setup(hoverPanel, hudTransform);
         validateBuildingEffectReferences();
         const playerCombatModifiers = new CombatStatModifierRegistry();
         const buildingVisualLibrary = await BuildingVisualLibrary.load();
@@ -259,6 +283,7 @@ export class MainMapController extends Component {
             damagePopupSpawner,
             lifecycle,
             resourceHealthBarTexture,
+            hoverInfo,
         );
         lifecycle.setup(worldObjectRegistry, this.worldObjectRenderer, navigationGrid, worldCellGrid);
         this.worldObjectRenderer.render(
@@ -274,6 +299,7 @@ export class MainMapController extends Component {
             hitFlashMaterial,
             this.combatEventHub,
             damagePopupSpawner,
+            hoverInfo,
         ).render(
             STATIC_MONSTER_GROUPS,
             worldObjectRegistry.getAll(),
@@ -332,12 +358,6 @@ export class MainMapController extends Component {
             mapWidth: STATIC_MAP[0]?.length ?? 0,
             mapHeight: STATIC_MAP.length,
         });
-        const hudRoot = this.getOrCreateCanvasChild('HUDRoot');
-        const hudTransform = hudRoot.getComponent(UITransform)
-            ?? hudRoot.addComponent(UITransform);
-        hudTransform.setContentSize(1280, 720);
-        hudTransform.setAnchorPoint(0.5, 0.5);
-        hudRoot.setPosition(0, 0, 0);
         const resourceHudNode = this.getOrCreateChild(hudRoot, 'ResourceHud');
         const resourceHud = resourceHudNode.getComponent(ResourceHudView)
             ?? resourceHudNode.addComponent(ResourceHudView);
@@ -357,6 +377,7 @@ export class MainMapController extends Component {
             buildingFactory,
             STATIC_MAP[0]?.length ?? 0,
             STATIC_MAP.length,
+            hoverInfo,
         );
         const blueprintInventory = new BuildingBlueprintInventory();
         const validator = new BuildingPlacementValidator(STATIC_MAP, worldCellGrid, resourceInventory);
@@ -390,6 +411,7 @@ export class MainMapController extends Component {
             buildingFactory,
             buildToolController,
             buildingUiAssets.blueprintCardFrame,
+            hoverInfo,
         );
         cardStrip.setup();
         const rosterNode = this.getOrCreateChild(hudRoot, 'SquadRosterRoot');
@@ -399,11 +421,14 @@ export class MainMapController extends Component {
             squadHandles,
             selection,
             squadPresentationById,
+            hoverInfo,
         );
         roster.setup();
         selection.setBeforeUserSelection(() => buildToolController.cancel());
         const interactionUiNodes = [cardStripNode, rosterNode];
         buildToolController.setInputExcludedNodes(interactionUiNodes);
+        hoverInfo.setWorldHoverEnabledPredicate(() => !buildToolController.isActive());
+        hoverLayer.setSiblingIndex(hudRoot.children.length - 1);
         const viewportNode = this.getOrCreateChild(mapRoot, 'WorldViewportController');
         const viewport = viewportNode.getComponent(WorldViewportController)
             ?? viewportNode.addComponent(WorldViewportController);

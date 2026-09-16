@@ -20,6 +20,7 @@ import {
     SQUAD_ROSTER_LEFT_X,
     SQUAD_ROSTER_TOP_Y,
 } from './SquadRosterUiConfig';
+import { type HoverInfoController } from '../hover/HoverInfoController';
 
 export class SquadRosterController {
     private unsubscribe: (() => void) | null = null;
@@ -31,6 +32,7 @@ export class SquadRosterController {
         private readonly handles: ReadonlyMap<string, SquadRuntimeHandle>,
         private readonly selection: SquadSelectionController,
         private readonly presentationById: ReadonlyMap<string, SquadPresentation>,
+        private readonly hover: HoverInfoController,
     ) {}
 
     public setup(): void {
@@ -44,6 +46,8 @@ export class SquadRosterController {
         sorted.forEach((squad, index) => {
             const presentation = this.presentationById.get(squad.id);
             if (!presentation) return;
+            const handle = this.handles.get(squad.id);
+            if (!handle) return;
             const node = new Node(`SquadCard_${squad.id}`);
             node.setParent(this.root);
             node.setPosition(0, -index * (SQUAD_ROSTER_CARD_HEIGHT + SQUAD_ROSTER_CARD_GAP), 0);
@@ -53,6 +57,9 @@ export class SquadRosterController {
                 commandColor: presentation.commandColor,
                 portraitFrame: presentation.portraitFrame,
                 onSelect: () => this.selection.selectSquad(squad.id),
+                squad,
+                handle,
+                hover: this.hover,
             });
             this.itemViews.set(squad.id, view);
         });

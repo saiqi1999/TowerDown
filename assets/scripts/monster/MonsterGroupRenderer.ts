@@ -17,6 +17,9 @@ import { MonsterGroupController } from './MonsterGroupController';
 import { MonsterMotor } from './MonsterMotor';
 import { MonsterCombatController } from './MonsterCombatController';
 import { MonsterAttackReceiver } from './MonsterAttackReceiver';
+import { HoverInfoTarget } from '../ui/hover/HoverInfoTarget';
+import { HoverPlacement, HoverTargetKind, HoverTargetScope } from '../ui/hover/HoverInfoTypes';
+import { type HoverInfoController } from '../ui/hover/HoverInfoController';
 
 export class MonsterGroupRenderer {
     private readonly frames = new Map<string, ReturnType<typeof createMonsterFrame>>();
@@ -28,6 +31,7 @@ export class MonsterGroupRenderer {
         private readonly flashMaterial: Material,
         private readonly hub: CombatEventHub,
         private readonly popup: DamagePopupSpawner,
+        private readonly hover: HoverInfoController,
     ) {}
     public render(groups: readonly MonsterGroupData[], objects: readonly WorldObjectData[], mapWidth: number, mapHeight: number, registry?: MonsterRuntimeRegistry): void {
         this.root.removeAllChildren();
@@ -76,6 +80,19 @@ export class MonsterGroupRenderer {
                     preferredCombatDistanceCells: config.preferredCombatDistanceCells,
                 });
                 const health = node.addComponent(HealthComponent); health.setup(config.maxHealth);
+                node.addComponent(HoverInfoTarget).setup({
+                    kind: HoverTargetKind.Monster,
+                    scope: HoverTargetScope.World,
+                    preferredPlacement: HoverPlacement.Right,
+                    controller: this.hover,
+                    getInfo: () => ({
+                        title: 'Blue Slime',
+                        rows: [
+                            { label: 'HP', value: `${health.getCurrentHealth()} / ${health.getMaxHealth()}` },
+                            { label: 'ATK', value: String(stats.getAttackDamage()) },
+                        ],
+                    }),
+                });
                 // health.subscribe((_current, _max, result) => {
                 //     if (result?.becameDepleted) animator.playDead();
                 // });

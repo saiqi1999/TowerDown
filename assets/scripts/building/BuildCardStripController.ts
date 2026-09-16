@@ -18,6 +18,7 @@ import { BuildingBlueprintCardView } from './BuildingBlueprintCardView';
 import { BuildingSpriteFrameFactory } from './BuildingSpriteFrameFactory';
 import { BuildToolController, type BuildToolState } from './BuildToolController';
 import { BLUEPRINT_CARD_BOTTOM_MARGIN, BLUEPRINT_CARD_GAP, BLUEPRINT_CARD_HEIGHT, BLUEPRINT_CARD_WIDTH } from './BuildCardUiConfig';
+import { type HoverInfoController } from '../ui/hover/HoverInfoController';
 
 export class BuildCardStripController {
     private blueprintUnsubscribe: (() => void) | null = null;
@@ -32,6 +33,7 @@ export class BuildCardStripController {
         private readonly factory: BuildingSpriteFrameFactory,
         private readonly tool: BuildToolController,
         private readonly cardFrame: SpriteFrame | null,
+        private readonly hover: HoverInfoController,
     ) {}
 
     public setup(): void {
@@ -65,7 +67,7 @@ export class BuildCardStripController {
             node.setParent(this.root);
             node.setPosition(-totalWidth / 2 + BLUEPRINT_CARD_WIDTH / 2 + index * (BLUEPRINT_CARD_WIDTH + BLUEPRINT_CARD_GAP), 0, 0);
             const view = node.addComponent(BuildingBlueprintCardView);
-            view.setup(definition, this.factory, this.cardFrame, () => this.tool.select(id));
+            view.setup(definition, this.factory, this.cardFrame, () => this.tool.select(id), this.hover);
             this.cardViews.set(id, view);
         });
         this.syncSelected(this.tool.getState());

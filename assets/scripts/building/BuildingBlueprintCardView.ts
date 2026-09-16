@@ -20,6 +20,14 @@ import {
     BLUEPRINT_CARD_NAME_FONT_SIZE,
     BLUEPRINT_CARD_WIDTH,
 } from './BuildCardUiConfig';
+import { HoverInfoTarget } from '../ui/hover/HoverInfoTarget';
+import {
+    HoverPlacement,
+    HoverTargetKind,
+    HoverTargetScope,
+} from '../ui/hover/HoverInfoTypes';
+import { type HoverInfoController } from '../ui/hover/HoverInfoController';
+import { BuildingCategory } from './BuildingTypes';
 
 const { ccclass } = _decorator;
 
@@ -34,6 +42,7 @@ export class BuildingBlueprintCardView extends Component {
         factory: BuildingSpriteFrameFactory,
         cardFrame: SpriteFrame | null,
         onSelect: () => void,
+        hover: HoverInfoController,
     ): void {
         (this.node.getComponent(UITransform) ?? this.node.addComponent(UITransform))
             .setContentSize(BLUEPRINT_CARD_WIDTH, BLUEPRINT_CARD_HEIGHT);
@@ -82,6 +91,23 @@ export class BuildingBlueprintCardView extends Component {
         this.button = this.node.getComponent(Button) ?? this.node.addComponent(Button);
         this.button.node.off(Button.EventType.CLICK);
         this.button.node.on(Button.EventType.CLICK, onSelect);
+        (this.node.getComponent(HoverInfoTarget) ?? this.node.addComponent(HoverInfoTarget)).setup({
+            kind: HoverTargetKind.Blueprint,
+            scope: HoverTargetScope.UI,
+            preferredPlacement: HoverPlacement.Top,
+            controller: hover,
+            getInfo: () => ({
+                title: definition.displayName,
+                subtitle: BuildingCategory[definition.category],
+                rows: [
+                    { label: '成本', value: this.formatCost(definition).replace('\n', '  ') || '无' },
+                    { label: '占地', value: `${definition.footprintW}×${definition.footprintH}` },
+                    ...(definition.shortEffectText
+                        ? [{ label: '效果', value: definition.shortEffectText }]
+                        : []),
+                ],
+            }),
+        });
         this.setSelected(false);
         this.setAffordable(true);
     }

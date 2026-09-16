@@ -161,6 +161,10 @@ export class SquadBrain extends Component {
         // Flag 需要跟随“最新已接受命令”而不是旧的实际交互目标，否则 reform 期间会提前消失。
         return this.commandTargetId;
     }
+
+    public getState(): SquadBrainState {
+        return this.state;
+    }
     private resumeTargetAfterGuardVictory(): void {
         const target = this.getActiveTarget();
         if (!target) {
