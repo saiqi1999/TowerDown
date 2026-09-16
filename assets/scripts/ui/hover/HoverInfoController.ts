@@ -11,7 +11,7 @@
 import { _decorator, Component, EventMouse, input, Input, Node, UITransform, Vec2 } from 'cc';
 import { HoverInfoPanelView } from './HoverInfoPanelView';
 import { resolveHoverPlacement } from './HoverPlacementResolver';
-import { HoverTargetScope, type HoverInfoSource } from './HoverInfoTypes';
+import { HoverTargetKind, HoverTargetScope, type HoverInfoSource } from './HoverInfoTypes';
 import {
     HOVER_ANCHOR_GAP,
     HOVER_CONTENT_REFRESH_SECONDS,
@@ -24,16 +24,18 @@ const { ccclass } = _decorator;
 
 @ccclass('HoverInfoController')
 export class HoverInfoController extends Component {
+    private readonly targets = new Map<Node, HoverInfoSource>();
     private panel: HoverInfoPanelView | null = null;
     private hudTransform: UITransform | null = null;
+    private hovered: HoverInfoSource | null = null;
     private current: HoverInfoSource | null = null;
-    private currentToken = 0;
     private showTimer = 0;
     private hideTimer = -1;
     private refreshTimer = 0;
     private signature = '';
     private pointer = new Vec2();
     private hasPointer = false;
+    private windowId = 0;
     private worldHoverEnabled: () => boolean = () => true;
 
     public setup(panel: HoverInfoPanelView, hudTransform: UITransform): void {
@@ -46,69 +48,179 @@ export class HoverInfoController extends Component {
         this.worldHoverEnabled = predicate;
     }
 
-    public enter(source: HoverInfoSource): void {
-        if (source.scope === HoverTargetScope.World && !this.worldHoverEnabled()) return;
-        this.currentToken += 1;
-        this.current = source;
-        this.showTimer = HOVER_SHOW_DELAY_SECONDS;
-        this.hideTimer = -1;
-        this.refreshTimer = 0;
-        this.signature = '';
+    public register(source: HoverInfoSource): void {
+        this.targets.set(source.anchor, source);
     }
 
-    public leave(anchor: Node): void {
-        if (this.current?.anchor !== anchor) return;
-        this.currentToken += 1;
-        this.hideTimer = HOVER_HIDE_DELAY_SECONDS;
-    }
+    public unregister(anchor: Node): void {
+        this.targets.delete(anchor);
+        if (this.hovered?.anchor === anchor) {
+            this.hovered = null;
+        }
 
-    public release(anchor: Node): void {
-        if (this.current?.anchor === anchor) this.hideImmediately();
+        if (this.current?.anchor === anchor) {
+            this.hideImmediately();
+        }
     }
 
     update(dt: number): void {
-        if (!this.current) return;
-        if (this.current.scope === HoverTargetScope.World && !this.worldHoverEnabled()) {
+        if (this.current?.scope === HoverTargetScope.World && !this.worldHoverEnabled()) {
             this.hideImmediately();
             return;
         }
+
         if (this.hideTimer >= 0) {
             this.hideTimer -= dt;
-            if (this.hideTimer <= 0) this.hideImmediately();
-            return;
+            if (this.hideTimer <= 0 && !this.hovered) {
+                this.hideImmediately();
+            }
         }
-        if (!this.panel?.isVisible()) {
+
+        if (this.current && !this.panel?.isVisible()) {
             this.showTimer -= dt;
             if (this.showTimer <= 0) {
                 this.refreshContent();
                 this.panel?.setVisible(true);
             }
-            return;
         }
-        this.refreshTimer -= dt;
-        if (this.refreshTimer <= 0) this.refreshContent();
+
+        if (this.current && this.panel?.isVisible()) {
+            this.refreshTimer -= dt;
+            if (this.refreshTimer <= 0) {
+                this.refreshContent();
+            }
+        }
     }
 
     lateUpdate(): void {
-        const source = this.current;
-        const panel = this.panel;
-        if (!source || !panel?.isVisible() || !source.anchor.isValid || !source.anchor.activeInHierarchy) {
-            if (source && (!source.anchor.isValid || !source.anchor.activeInHierarchy)) this.hideImmediately();
+        this.resolveHoveredTarget();
+        this.updatePanelPosition();
+    }
+
+    protected onDestroy(): void {
+        input.off(Input.EventType.MOUSE_MOVE, this.onMouseMove, this);
+        this.targets.clear();
+        this.hovered = null;
+        this.current = null;
+    }
+
+    private resolveHoveredTarget(): void {
+        const next = this.pickTarget();
+        if (next?.anchor === this.hovered?.anchor) {
             return;
         }
+
+        const previous = this.hovered;
+        this.hovered = next;
+
+        if (next) {
+            this.onHoverChanged(previous, next);
+            return;
+        }
+
+        this.beginHide();
+    }
+
+    private pickTarget(): HoverInfoSource | null {
+        if (!this.hasPointer) {
+            return null;
+        }
+
+        let best: HoverInfoSource | null = null;
+        let bestPriority = Number.NEGATIVE_INFINITY;
+
+        for (const source of this.targets.values()) {
+            const anchor = source.anchor;
+            if (!anchor.isValid || !anchor.activeInHierarchy) {
+                continue;
+            }
+
+            if (source.scope === HoverTargetScope.World && !this.worldHoverEnabled()) {
+                continue;
+            }
+
+            const transform = anchor.getComponent(UITransform);
+            if (!transform || !transform.hitTest(this.pointer, this.windowId)) {
+                continue;
+            }
+
+            const priority = this.getPriority(source);
+            if (priority > bestPriority) {
+                best = source;
+                bestPriority = priority;
+            }
+        }
+
+        return best;
+    }
+
+    private getPriority(source: HoverInfoSource): number {
+        if (source.scope === HoverTargetScope.UI) {
+            return 1000;
+        }
+
+        switch (source.kind) {
+        case HoverTargetKind.Monster:
+            return 300;
+        case HoverTargetKind.Building:
+            return 200;
+        case HoverTargetKind.Resource:
+            return 100;
+        case HoverTargetKind.Base:
+            return 90;
+        default:
+            return 0;
+        }
+    }
+
+    private onHoverChanged(_previous: HoverInfoSource | null, next: HoverInfoSource): void {
+        this.beginShow(next);
+    }
+
+    private beginShow(source: HoverInfoSource): void {
+        const alreadyVisible = this.panel?.isVisible() ?? false;
+        this.current = source;
+        this.signature = '';
+        this.refreshTimer = 0;
+        this.hideTimer = -1;
+
+        if (alreadyVisible) {
+            this.showTimer = 0;
+            this.refreshContent();
+            this.panel?.setVisible(true);
+            return;
+        }
+
+        this.showTimer = HOVER_SHOW_DELAY_SECONDS;
+    }
+
+    private beginHide(): void {
+        if (!this.current) {
+            return;
+        }
+
+        this.hideTimer = HOVER_HIDE_DELAY_SECONDS;
+    }
+
+    private updatePanelPosition(): void {
+        const source = this.current;
+        const panel = this.panel;
+        if (!source || !panel?.isVisible()) {
+            return;
+        }
+
+        if (!source.anchor.isValid || !source.anchor.activeInHierarchy) {
+            this.hideImmediately();
+            return;
+        }
+
         const anchorTransform = source.anchor.getComponent(UITransform);
         if (!anchorTransform || !this.hudTransform) {
             this.hideImmediately();
             return;
         }
+
         const anchorRect = anchorTransform.getBoundingBoxToWorld();
-        if (
-    this.hasPointer
-    && !anchorTransform.hitTest(this.pointer)
-) {
-    this.hideImmediately();
-    return;
-}
         const size = panel.getSize();
         const result = resolveHoverPlacement(
             anchorRect,
@@ -120,10 +232,6 @@ export class HoverInfoController extends Component {
             HOVER_SAFE_MARGIN,
         );
         panel.setWorldPosition(result.worldX, result.worldY);
-    }
-
-    protected onDestroy(): void {
-        input.off(Input.EventType.MOUSE_MOVE, this.onMouseMove, this);
     }
 
     private refreshContent(): void {
@@ -139,13 +247,14 @@ export class HoverInfoController extends Component {
 
     private hideImmediately(): void {
         this.current = null;
-        this.currentToken += 1;
+        this.hovered = null;
         this.hideTimer = -1;
         this.panel?.setVisible(false);
     }
 
     private onMouseMove(event: EventMouse): void {
-    event.getLocation(this.pointer);
-    this.hasPointer = true;
-}
+        event.getLocation(this.pointer);
+        this.windowId = event.windowId ?? 0;
+        this.hasPointer = true;
+    }
 }

@@ -1,14 +1,14 @@
 /**
  * Why this file exists:
- * Any node with a UITransform needs the same small adapter from mouse hover to the shared controller.
+ * Hoverable nodes need a small adapter that registers the live Node with the shared controller.
  *
  * Ownership boundary:
- * This file owns mouse enter, mouse leave, and release forwarding for one anchor node.
+ * This file owns one node's hover source registration and unregistration lifecycle.
  *
  * This file deliberately does NOT:
- * It does not create a tooltip panel, cache dynamic content, or read gameplay state itself.
+ * It does not decide whether the pointer is inside the node, own tooltip state, or cache coordinates.
  */
-import { _decorator, Component, Node } from 'cc';
+import { _decorator, Component } from 'cc';
 import { type HoverInfoTargetConfig } from './HoverInfoTypes';
 
 const { ccclass } = _decorator;
@@ -16,38 +16,50 @@ const { ccclass } = _decorator;
 @ccclass('HoverInfoTarget')
 export class HoverInfoTarget extends Component {
     private config: HoverInfoTargetConfig | null = null;
+    private registered = false;
 
     public setup(config: HoverInfoTargetConfig): void {
+        if (this.registered && this.config?.controller !== config.controller) {
+            this.unregister();
+        }
         this.config = config;
+        this.registerIfReady();
     }
 
     protected onEnable(): void {
-        this.node.on(Node.EventType.MOUSE_ENTER, this.onMouseEnter, this);
-        this.node.on(Node.EventType.MOUSE_LEAVE, this.onMouseLeave, this);
+        this.registerIfReady();
     }
 
     protected onDisable(): void {
-        this.node.off(Node.EventType.MOUSE_ENTER, this.onMouseEnter, this);
-        this.node.off(Node.EventType.MOUSE_LEAVE, this.onMouseLeave, this);
+        this.unregister();
     }
 
     protected onDestroy(): void {
-        this.config?.controller.release(this.node);
+        this.unregister();
     }
 
-    private onMouseEnter(): void {
+    private registerIfReady(): void {
         const config = this.config;
-        if (!config) return;
-        config.controller.enter({
+        if (!config || this.registered || !this.node.isValid || !this.node.activeInHierarchy) {
+            return;
+        }
+
+        config.controller.register({
             anchor: this.node,
             kind: config.kind,
             scope: config.scope,
             preferredPlacement: config.preferredPlacement,
             getInfo: config.getInfo,
         });
+        this.registered = true;
     }
 
-    private onMouseLeave(): void {
-        this.config?.controller.leave(this.node);
+    private unregister(): void {
+        if (!this.registered || !this.config) {
+            return;
+        }
+
+        this.config.controller.unregister(this.node);
+        this.registered = false;
     }
 }
