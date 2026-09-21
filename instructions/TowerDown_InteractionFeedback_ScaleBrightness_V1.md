@@ -1,4 +1,4 @@
-# TowerDown 建筑与卡片交互反馈技术方案 V1
+# TowerDown 建筑与卡片交互反馈技术方案 V1.1：独立动画叠加
 
 > 基于main提交 `ad31bb35efd24445148074d5c8f43d39e404e636`（next level），Cocos Creator 3.8.8。
 > 本轮交付技术方案，不修改运行时代码。目标：地图建筑、队伍UI、建筑蓝图卡的Hover与点击具有X/Y独立阻尼震荡缩放，并轻微提亮图片。
@@ -8,14 +8,14 @@
 
 | 对象                      | Hover             | 有效点击                | 提亮对象                  |
 | ----------------------- | ----------------- | ------------------- | --------------------- |
-| 地图已建建筑                  | 小幅放大并回弹到悬停比例      | 横向展开、纵向压缩后回弹        | 建筑Sprite              |
+| 地图已建建筑                  | 进入时播放一次独立拉伸震荡      | 横向展开、纵向压缩后回弹        | 建筑Sprite              |
 | 主基地                     | 同地图建筑             | 反馈后立即执行现有基地逻辑，不等待动画 | 基地Sprite              |
 | 左侧队伍UI                  | 卡片小幅放大            | 回弹＋现有选队             | Portrait图片；不改变阵营色条与文字 |
 | 底部蓝图卡                   | 卡片小幅放大            | 可操作时回弹＋现有蓝图选择       | 卡片背景Sprite与Icon       |
 | 不足资源的蓝图                 | 保留Tooltip；不做放大/提亮 | 不做点击反馈，不放行按钮        | 保持现有低透明度              |
 | 资源、敌人、地图单位本体、Ghost、目的地卡 | 本轮不接入             | 原业务不变               | 不接入                   |
 
-Hover反馈在命中目标改变时立即发生，不等待Tooltip的0.08秒显示延迟。离开后回到正常比例和亮度。点击不循环播放，不持续抖动，不震动相机或地图位置。本轮“震荡”只作用X/Y缩放，不额外添加位置晃动和旋转。
+Hover反馈在命中目标改变时立即发生，不等待Tooltip的0.08秒显示延迟。离开Hover当帧提亮归零；已经启动的缩放动画继续自然结束。每次重新进入可立即启动新的独立动画，不等待、不重置、不停止旧动画。点击不循环播放，不持续抖动，不震动相机或地图位置。本轮“震荡”只作用X/Y缩放，不额外添加位置晃动和旋转。
 
 按钮禁用、面板打开、地图切换、建造模式禁止世界交互时均遵守当前门禁，视觉反馈不能绕过业务限制。触摸没有Hover，只有有效点击反馈。
 
@@ -65,55 +65,79 @@ CardRoot固定布局与命中，保留Button、HoverInfoTarget、UITransform及�
 
 当卡片放大后视觉略超出命中边界，仍按原逻辑区域拾取，这是有意保持稳定。布局间距不足时减小UI预设放大比例，不在Hover时重新排版整条卡栏。
 
-## 4. 公共阻尼震荡函数
+## 4. 独立动画实例与叠加合成
 
-新增：
+本轮明确采用**独立时间轴＋加法合成**，替代旧稿“单个弹簧修改target/velocity”的处理。新事件不打断旧动画，也不继承或改写旧实例速度。
 
-- feedback/InteractionFeedbackMath.ts：纯函数，X/Y分别更新。
-- feedback/InteractionFeedbackConfig.ts：三个预设，不散落魔法数。
-- feedback/InteractionFeedbackView\.ts：单个对象的Hover/点击状态与视觉更新。
-- feedback/InteractionBrightnessView\.ts：Sprite材质实例与亮度写入。
+新增文件仍为InteractionFeedbackMath.ts、InteractionFeedbackConfig.ts、InteractionFeedbackView.ts、InteractionBrightnessView.ts；无需引入第三方动画库。
 
-每轴保存value、velocity、target，满足：
-x''＋2ζωx'＋ω²(x−target)=0。
+### 4.1 独立性的三个层次
 
-采用欠阻尼解析步进（0<ζ<1），避免不同FPS下不同震荡幅度。一个共享函数stepAxis(value, velocity, target, omega, zeta, dt)同时用于X/Y，仅参数不同。
+- 不同对象：A移出后仍在回弹，B可以立即开始；各自维护pulse列表，没有全局isAnimating互斥锁。
+- 同一对象：进入A→离开→再次进入A，生成A的第二个pulse；第一个继续自己的时间轴。点击再加入第三个pulse。
+- 同一对象不同属性：缩放pulse可以继续，Hover退出立即关闭亮度；没有某个旧动画的onComplete把整个对象scale重置为1或重新点亮。
 
-计算步骤：
+“互不干扰”指实例的参数、时间和生命周期独立；同一物理scale的最终视觉必须有明确合成规则。不能让多个Tween直接竞争写Node.scale，后写覆盖前写不等于独立播放。
 
-```
-e = value - target
-a = zeta * omega
-w = omega * sqrt(1 - zeta * zeta)
-c = cos(w * dt)
-s = sin(w * dt)
-decay = exp(-a * dt)
+每个pulse数据：
 
-nextValue = target + decay * (e * c + (velocity + a * e) / w * s)
-nextVelocity = decay * (velocity * c - (a * velocity + omega * omega * e) / w * s)
-```
+    { id, kind: 'hover' | 'click', startTime, duration,
+      amplitudeX, amplitudeY, frequencyX, frequencyY, decay }
 
-调用前校验omega>0、0\<zeta<1、dt有限且非负。正常帧使用实际dt；从后台恢复且dt>0.25秒时直接吸附目标并清速度/点击闪亮脉冲，避免隔很久回来继续弹。若绝对误差<0.001且绝对速度<0.01，吸附目标，停止无意义更新。
+每个对象一个单调时钟now；每次有效Hover false→true或有效点击push一个新pulse。指针在对象内部移动不是新的enter，不每帧增加pulse；同一物理点击产生的重复事件仍要去重。真实新事件不因已有动画而被吞掉。
 
-### 4.1 默认参数（起调值）
+### 4.2 单个pulse函数
 
-| 预设                 | Hover目标X/Y    | omega X/Y | zeta X/Y    | 点击速度脉冲X/Y   | Hover亮度增益 | 点击额外亮度峰值 |
-| ------------------ | ------------- | --------- | ----------- | ----------- | --------: | -------: |
-| WorldBuilding（含基地） | 1.035 / 1.055 | 23 / 27   | 0.56 / 0.50 | +2.2 / -3.0 |      0.06 |     0.04 |
-| SquadCard          | 1.035 / 1.035 | 27 / 31   | 0.65 / 0.58 | +1.6 / -2.2 |      0.05 |     0.04 |
-| BlueprintCard      | 1.03 / 1.045  | 26 / 30   | 0.62 / 0.55 | +1.8 / -2.5 |      0.05 |     0.04 |
+每轴独立使用衰减正弦，返回相对于1的缩放增量：
 
-idle目标均为(1,1)。进入Hover只改变target，不把当前value/velocity重置；离开改回(1,1)。因此快速扫过/重入也是连续的。
+    u = t / T
+    z = clamp((u - 0.8) / 0.2, 0, 1)
+    tail = 1 - z*z*(3 - 2*z)
+    delta(t) = A * exp(-lambda*t) * sin(2*pi*f*t) * tail
 
-有效点击对当前velocity追加脉冲；X先展开、Y先压缩，然后围绕当前Hover或idle目标回弹。禁止点击时排队Tween或等上次动画结束。速度逐轴夹到\[-4,4]；缩放数值防护夹到\[0.80,1.20]，碰到边界时清掉朝外的速度。正常预设应很少触发此夹限。
+t=now-startTime；t<0或t>=T返回0。最后20%寿命用平滑窗收尾，确保到期增量与斜率回到0，不在删除时跳变。X/Y使用独立A、f；每个pulse的t、T不因其他pulse启动而修改。
 
-点击亮度额外量从峰值在0.12秒内平滑衰减到0，重复点击重启这一个计时器，不无限叠加。交互亮度总增益上限0.12。Hover亮度进入约0.08秒、离开约0.10秒平滑变化，可用1-exp(-dt/tau)插值，避免线性逐帧加常量导致FPS差异。
+用绝对elapsed计算函数，不逐帧积分；相同采样时刻与帧率无关。传入非负有限dt推进对象时钟；后台恢复时自然跳过已到期pulse，而不是重启它们。
+
+### 4.3 合成与写入
+
+每帧计算该对象全部活跃pulse：
+
+    sumX = sum(sampleX(pulse, now))
+    sumY = sum(sampleY(pulse, now))
+    ratioX = 1 + clamp(sumX, -0.20, 0.20)
+    ratioY = 1 + clamp(sumY, -0.20, 0.20)
+    FeedbackRoot.setScale(baseX * ratioX, baseY * ratioY, baseZ)
+
+每个对象由一个合成器每帧最多写一次scale。base固定为初始化比例，不从当前已动画缩放反推。夹限只保护最终输出，不修改/删除任一pulse；极端密集触发时视觉会饱和，这是有限幅度的明确取舍。正常强度由下表调小，避免频繁碰上限。
+
+到期只删除自己的pulse，不调用reset、不直接setScale(1)。仅当列表为空时，合成器写回基准并停止更新。不同对象可以同帧都在播放，且相互不读写pulse列表。
+
+本轮Hover拉伸是“一次进入、一次震荡、自然回原比例”，不额外保持旧稿的持续悬停放大目标；悬停期间仍持续轻微提亮。这样Hover退出不会重定向正在播放的缩放。
+
+### 4.4 起调参数
+
+| 预设 | Hover振幅X/Y | Click振幅X/Y | 频率X/Y | lambda | 生命周期T | Hover亮度 |
+|---|---|---|---|---:|---:|---:|
+| WorldBuilding（含基地） | +0.060 / +0.085 | +0.080 / -0.105 | 4 / 5 Hz | 6 | 0.60秒 | 0.06 |
+| SquadCard | +0.045 / +0.055 | +0.060 / -0.075 | 4.5 / 5.5 Hz | 7 | 0.50秒 | 0.05 |
+| BlueprintCard | +0.045 / +0.065 | +0.065 / -0.085 | 4.5 / 5.5 Hz | 7 | 0.55秒 | 0.05 |
+
+A为正弦前系数，不代表实际峰值必达A；衰减会降低峰值。参数为本项目起调建议，不是引用框架的默认数值。对象池可复用到期pulse数据，不能通过“已有动画则return”或删除最老pulse限制正常并发。
+
+### 4.5 亮度单独由当前交互状态控制
+
+桌面规则：hovered && enabled && !suspended时才允许brightnessGain>0；false时**立即写0**，不保留旧稿0.10秒淡出，也不等缩放结束。删除旧版点击额外提亮脉冲，点击只增加缩放pulse，避免鼠标离开后被点击计时器重新点亮。
+
+Hover进入亮度可在0.05～0.08秒内渐入；退出同步归零并清其渐入进度。一次Hover重新进入是新的亮度会话，旧会话不能在晚到回调中写材质；建议直接按状态在update计算，不用异步完成回调。
+
+移动端无Hover，本版在有效touch按住且可交互时轻微提亮，touch end/cancel立即归零；有效点击缩放仍继续播放。禁用、面板打开、失焦、切层同样让提亮立即消失。
 
 ## 5. 轻微提亮：独立RGB增益
 
 新增 `assets/effects/interaction-brightness.effect` 与 `assets/material/interaction-brightness.mtl`，以仓库hit-flash.effect的Sprite渲染模板为基础；保留USE\_TEXTURE、分离Alpha采样、IS\_GRAY、顶点色、Alpha Test和原透明混合配置。材质UUID由Creator生成，不复制旧effect的UUID。
 
-hover离开后，亮度恢复为初始值。
+Hover离开当帧brightnessGain恢复0；是否仍有缩放pulse运行与此无关。
 
 新uniform/property为brightnessGain，默认0。在纹理采样并乘顶点色之后、ALPHA\_TEST之前：
 
@@ -165,7 +189,7 @@ HoverInfoController内部新增统一changeHovered(next)：
 
 不能先把hovered=null再调用false，否则视觉组件收不到退出。清Tooltip与清原始Hover身份要区分：Tooltip延迟隐藏不应延迟视觉exit；切换A→B时不能让后续旧Tooltip清理把B再误退出。
 
-暂挂时清反馈并停止拾取；解除时使用有效的最新指针位置重新拾取。现有setSuspended会清hasPointer，可改为暂挂期间继续采样位置但不拾取，恢复时下一帧重新计算；应用失焦则清指针有效性，避免在未知位置恢复Hover。
+暂挂时发送Hover退出、立即清亮度并停止拾取；对象仍可见时，已有缩放pulse继续自然结束；解除时使用有效的最新指针位置重新拾取。现有setSuspended会清hasPointer，可改为暂挂期间继续采样位置但不拾取，恢复时下一帧重新计算；应用失焦则清指针有效性，避免在未知位置恢复Hover。
 
 getInfo只返回文本，不承担动画副作用。FeedbackRoot不注册第二个HoverInfoTarget，不用MOUSE\_ENTER/MOUSE\_LEAVE驱动同一反馈。
 
@@ -180,7 +204,7 @@ feedback.playClick()；
 
 不要同时在TOUCH\_END和Button.CLICK都播放。键盘数字选队引起setSelected不应伪造鼠标点击脉冲；本轮只反馈真实点击。重复setup时按当前风格先解绑自己的旧回调再绑定，不能累积监听。
 
-当蓝图setAffordable(false)，同步feedback.setInteractionEnabled(false)，立即清Hover/点击脉冲并归零亮度；Tooltip仍允许解释成本。变回可用时，如果当前鼠标仍在该卡上，恢复适用Hover状态，不要求重新进出。反馈组件可保留原始hovered意图与enabled两个独立字段，最终目标由两者共同决定。
+当蓝图setAffordable(false)，同步feedback.setInteractionEnabled(false)，立即归零亮度并禁止新pulse；已有缩放pulse自然结束，不因此被打断；Tooltip仍允许解释成本。变回可用时，如果当前鼠标仍在该卡上，恢复适用Hover状态，不要求重新进出。反馈组件可保留原始hovered意图与enabled两个独立字段，亮度资格由两者共同决定，已经启动的pulse与这两个字段独立。
 
 ### 地图建筑
 
@@ -190,7 +214,7 @@ feedback.playClick()；
 
 地图点击应复用当前输入阻断条件：建造工具激活、基地面板打开、transition.isTransitioning、HUD覆盖时不反馈。点击时采样当前点击位置，不用上一帧鼠标Hover对象代替。若当前逻辑拾取判定不是该建筑则忽略，避免被上层UI/对象挡住还弹跳；必要时把HoverInfoController现有候选排序提为可复用pickAt(screenPoint)方法，但不增加第二套拾取状态机。
 
-基地反馈在门禁通过后、现有onBaseClicked前调用。基地弹出面板使Hover暂停，应立刻释放Hover反馈；不为了完整播放动画延迟打开面板。未达三杀时可以响应轻量点击触感，但仍不打开页面、不派回城。
+基地反馈在门禁通过后、现有onBaseClicked前调用。基地弹出面板使Hover暂停，应立刻清除提亮，已有缩放pulse可在仍可见的节点上自然结束；不为了完整播放动画延迟打开面板。未达三杀时可以响应轻量点击触感，但仍不打开页面、不派回城。
 
 反馈不负责扣资源、切选队、进入建造或弹出面板，以上依然归原controller。
 
@@ -205,9 +229,9 @@ InteractionFeedbackView建议接口：
 - reset()
 - dispose()
 
-只保存初始化基准scale/position，不在每次点击读取已经被动画放大的scale作为新基准。由于FeedbackRoot只供本组件写，目标比例始终相对(1,1)，静态美术缩放由其父节点负责。
+只保存初始化基准scale/position，不在每次点击读取已经被动画放大的scale作为新基准。由于FeedbackRoot只供本组件写，缩放增量始终相对基准(1,1)，静态美术缩放由其父节点负责。
 
-onDisable/onDestroy/reset清速度、计时器、hover状态和亮度，恢复基准比例。组件不可见时不计算动画；达到平衡时跳过变换与材质写入。
+普通Hover exit不调用reset，只清提亮。onDisable/onDestroy/显式reset才释放该对象全部pulse及亮度并恢复基准；这是对象生命周期清理，不是新动画中断旧动画。对象未被停用、仅失去Hover或变为不可交互时，已有pulse继续更新。列表为空时跳过缩放更新。
 
 主基地面板打开/切层时，使用当前HoverInfoController.setSuspended和世界门禁退出。持久建筑经过地图切换后不会再次setup或重复创建MaterialInstance；新建建筑创建时接入一次即可。SpriteFrame从towncenter0换成1时保留视觉组件与材质，仅替换帧。
 
@@ -234,18 +258,18 @@ Roster/Card重建前应销毁旧节点及其组件，不能只removeAllChildren�
 
 - 三类目标Hover即响应，X/Y有独立节奏；离开后最终scale精确归1、brightnessGain归0。
 - 静止鼠标时地图平移/缩放，仍由既有集中拾取选择正确目标；弹性不导致反复进出边界。
-- 连点100次不越来越大、不堆积Tween、不出现负比例；重入平滑。
+- 连点100次每次产生独立pulse，输出有界；所有pulse到期后归零，不永久累积实例或缩放。
 - 30/60/120FPS相同输入下曲线接近；后台恢复无爆跳。
 - 鼠标点击和触摸各只播放一次；拖图、取消手势、多指不播放。
 - 队伍选中偏移/透明度/颜色不丢，蓝图selected描边/affordable禁用不丢。
 - Disabled蓝图可看Tooltip，但不产生成功点击反馈或提亮。
 - 同图集另一张卡/建筑不跟着亮，半透明边缘和Alpha保持正确。
-- 打开基地面板、切换地图、禁用/销毁对象后无放大或提亮残留。
+- 打开面板立即无提亮，仍可见对象的既有pulse自然结束；实际停用/销毁或切层reset后无缩放与提亮残留。
 - 基地换图后只有一张Sprite，位置尺寸正常，仍能三杀后打开面板。
 - 新建/反复切换后材质实例、事件监听数量不无界增长。
 - 弹性只改视觉，建筑占格/寻路/点击判定和UI布局不受影响。
 
-自动检查聚焦阻尼函数有界收敛、不同dt一致性与亮度钳制；实际手感、材质编译、九宫格与输入需Creator预览验证。本次仅提供实施方案，不宣称完成运行测试。
+自动检查聚焦独立pulse函数、加法合成、不同dt一致性与亮度状态；实际手感、材质编译、九宫格与输入需Creator预览验证。本次仅提供实施方案，不宣称完成运行测试。
 
 ## 11. 文档位置
 
@@ -253,3 +277,26 @@ Roster/Card重建前应销毁旧节点及其组件，不能只removeAllChildren�
 `instructions/TowerDown_InteractionFeedback_ScaleBrightness_V1.md`。
 
 上一份双地图与部队整备方案仍保留，作为已实现功能的参考；本轮未要求归档，不移动其他文档。
+
+## 12. 成熟模式参考与本项目选择
+
+本轮检索采用下列一手文档/平台文档，借鉴的是动画合成模式，不把Unity或Web动画API引入Cocos。
+
+1. [Unity AnimationLayerMixerPlayable.SetLayerAdditive](https://docs.unity3d.com/ScriptReference/Animations.AnimationLayerMixerPlayable.SetLayerAdditive.html)：官方区分叠加层与覆盖层；为本方案选择独立效果相加提供模式参考。
+2. [MDN animation-composition](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/animation-composition)：说明多个效果如何与基础属性进行replace/add/accumulate合成。本项目只借鉴显式合成概念；数值scale增量求和是本项目规则，不声称等价于CSS transform列表的add语义。
+3. [Cocos Creator 3.8 Tween接口](https://docs.cocos.com/creator/3.8/manual/en/tween/tween-interface.html)：stopAllByTarget会停止同目标上的全部Tween。因此本轮普通Hover/点击禁止通过此接口清掉旧动画；采用独立pulse数据＋唯一写入者。
+
+旧方案“持续修改一个弹簧目标”“重复点击重启一个计时器”的规则已由第4节替换。不是排队，也不是停掉旧动画后从当前值续播。
+
+### 必测并发序列
+
+| 输入 | 缩放预期 | 亮度预期 |
+|---|---|---|
+| A进入，0.08秒后移到B | A的pulse继续，B新pulse同时开始 | A立即0，B提亮 |
+| A进入→退出→0.15秒内重入 | A有两个不同startTime的pulse，旧者不重启 | 按最新Hover状态 |
+| 同一A连续点击3次 | 三个pulse独立计时，逐帧增量求和 | 仍只看Hover/触摸按住状态 |
+| 旧pulse结束，新pulse仍活跃 | 仅移除旧实例，不把scale设回1 | 不受pulse结束影响 |
+| A退出后仍震荡 | 正常播放至自己的T | 全程为0，不被晚到回调点亮 |
+| 所有pulse结束 | 精确基准scale，无活动实例 | 若仍Hover可亮；退出必为0 |
+
+调试纯函数检查：记录第一个pulse在单独播放时的sample(t)，加入第二个后其sample(t)必须完全一致；合成前sum等于各sample之和。这样验证的是“旧动画未被修改”，不只是肉眼觉得连续。
