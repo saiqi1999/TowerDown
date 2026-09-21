@@ -49,6 +49,10 @@ export class WorldObjectLifecycleController extends Component {
         });
     }
 
+    public clearPendingForFloorChange(): void {
+        this.pending.clear();
+    }
+
     update(dt: number): void {
         for (const [objectId, removal] of this.pending) {
             removal.remaining -= dt;

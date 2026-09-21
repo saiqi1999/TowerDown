@@ -15,6 +15,7 @@ import { BasePanelView } from './BasePanelView';
 export class BaseInteractionController {
     private unsubscribe: (() => void) | null = null;
     private baseSpriteFrameSetter: ((frame: SpriteFrame) => void) | null = null;
+    private idleFrame: SpriteFrame | null = null;
     private readyFrame: SpriteFrame | null = null;
     private openState = false;
     private ready = false;
@@ -31,6 +32,7 @@ export class BaseInteractionController {
         onOpenStateChanged?: (open: boolean) => void;
     }): void {
         this.baseSpriteFrameSetter = config.setBaseSpriteFrame;
+        this.idleFrame = config.idleFrame;
         this.readyFrame = config.readyFrame;
         this.panel = config.panel;
         this.onOpenStateChanged = config.onOpenStateChanged ?? null;
@@ -72,15 +74,17 @@ export class BaseInteractionController {
         this.panel?.dispose();
         this.panel = null;
         this.baseSpriteFrameSetter = null;
+        this.idleFrame = null;
         this.readyFrame = null;
         this.onOpenStateChanged = null;
     }
 
     private onCounterChanged(snapshot: EnemyKillSnapshot): void {
-        if (this.ready || !snapshot.ready) return;
-        this.ready = true;
+        this.ready = snapshot.ready;
         if (this.baseSpriteFrameSetter) {
-            if (this.readyFrame) this.baseSpriteFrameSetter(this.readyFrame);
+            this.baseSpriteFrameSetter(this.ready && this.readyFrame
+                ? this.readyFrame
+                : this.idleFrame);
         }
     }
 }

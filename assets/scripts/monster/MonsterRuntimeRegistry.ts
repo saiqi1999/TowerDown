@@ -11,4 +11,9 @@ export class MonsterRuntimeRegistry {
     }
     public getAll(): readonly MonsterGroupController[] { return [...this.groups.values()]; }
     public getGuardCenter(groupId: string): GridPoint | null { return this.groups.get(groupId)?.getGuardCenter() ?? null; }
+    public clear(): void { this.groups.clear(); }
+    public replaceAll(groups: readonly MonsterGroupController[]): void {
+        this.clear();
+        for (const group of groups) this.registerGroup(group);
+    }
 }

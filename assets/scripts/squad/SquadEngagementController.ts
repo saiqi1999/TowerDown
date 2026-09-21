@@ -156,6 +156,15 @@ export class SquadEngagementController extends Component {
         this.tryCompleteReform();
     }
 
+    public resetForFloor(): void {
+        this.currentTarget = null;
+        this.assignments = [];
+        this.anyWarriorEngaged = false;
+        this.targetDepletedPending = false;
+        this.state = SquadEngagementState.Inactive;
+        for (const motor of this.warriorMotors) motor.snapToFormationForFloor();
+    }
+
     public hasAnyWarriorEngaged(): boolean {
         return this.anyWarriorEngaged;
     }

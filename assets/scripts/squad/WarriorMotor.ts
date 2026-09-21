@@ -117,6 +117,15 @@ export class WarriorMotor extends Component {
         };
     }
 
+    public snapToFormationForFloor(): void {
+        this.currentLocalGridOffset = { ...this.formationOffset };
+        this.targetLocalGridOffset = { ...this.formationOffset };
+        this.moving = false;
+        this.arrivedPending = false;
+        this.syncNodePosition();
+        this.animator?.resetToIdleForFloor(this.lastDirection);
+    }
+
     public getWorldGridPosition(squadGridPosition: GridPoint): GridPoint {
         return {
             x: squadGridPosition.x + this.currentLocalGridOffset.x,

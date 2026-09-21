@@ -47,6 +47,18 @@ export class NavigationGrid {
         return blocked;
     }
 
+    public replaceFrom(candidate: NavigationGrid): void {
+        if (candidate.width !== this.width || candidate.height !== this.height) {
+            throw new Error('[NavigationGrid] replaceFrom size mismatch.');
+        }
+        for (let y = 0; y < this.height; y += 1) {
+            for (let x = 0; x < this.width; x += 1) {
+                if (candidate.isWalkable(x, y)) this.setWalkable(x, y);
+                else this.setBlocked(x, y);
+            }
+        }
+    }
+
     private getIndex(x: number, y: number): number {
         return y * this.width + x;
     }

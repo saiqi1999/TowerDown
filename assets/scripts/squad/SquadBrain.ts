@@ -165,6 +165,18 @@ export class SquadBrain extends Component {
     public getState(): SquadBrainState {
         return this.state;
     }
+    public resetForFloor(homeRestCell: GridCell): void {
+        this.commandTargetId = null;
+        this.activeTargetId = null;
+        this.pendingTargetId = null;
+        this.pendingReturnHome = false;
+        this.guardEncounterRequested = false;
+        this.homeRestCell = { ...homeRestCell };
+        this.motor.stop();
+        this.engagement.resetForFloor();
+        this.combat?.resetForFloor();
+        this.enterHomeIdle();
+    }
     private resumeTargetAfterGuardVictory(): void {
         const target = this.getActiveTarget();
         if (!target) {

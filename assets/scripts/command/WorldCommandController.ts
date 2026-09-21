@@ -56,12 +56,20 @@ export class WorldCommandController extends Component {
         this.flagFrames = createTargetFlagFrames(config.targetFlagTexture);
         this.onBaseClicked = config.onBaseClicked ?? null;
 
-        const views = config.worldObjectRoot.getComponentsInChildren(WorldObjectView);
+        this.bindWorldObjectViews(config.worldObjectRoot.getComponentsInChildren(WorldObjectView));
+    }
+
+    public bindWorldObjectViews(views: readonly WorldObjectView[]): void {
         for (const view of views) {
             view.bindClickHandler((objectId) => this.onWorldObjectClicked(objectId));
         }
-
         console.log(`[WorldCommandController] bound ${views.length} world objects.`);
+    }
+
+    public clearTargetsForFloorChange(): void {
+        this.targetBySquad.clear();
+        for (const flag of this.flagBySquad.values()) flag.hide();
+        this.flagBySquad.clear();
     }
 
     update(): void {

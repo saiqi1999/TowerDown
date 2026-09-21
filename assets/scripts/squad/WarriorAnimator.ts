@@ -108,6 +108,16 @@ export class WarriorAnimator extends Component {
         this.applyFrame();
     }
 
+    public resetToIdleForFloor(direction: WarriorDirection = this.direction): void {
+        this.direction = direction;
+        this.walkFrameIndex = 0;
+        this.attackPhase = 0;
+        this.frameTimer = 0;
+        this.attackPoseVisible = false;
+        this.animationState = WarriorAnimationState.Idle;
+        this.applyFrame();
+    }
+
     // Attack 图的 4 列代表方向而不是时间，因此攻击动画要在“站姿帧”和“方向 Pose”之间切换。
     public playAttack(direction: WarriorDirection): void {
         const directionChanged = this.direction !== direction;

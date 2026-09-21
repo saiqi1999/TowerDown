@@ -172,6 +172,66 @@ export class WorldObjectRenderer {
         console.log(`[WorldObjectRenderer] rendered ${objects.length} world objects.`);
     }
 
+    public replaceResources(resources: readonly WorldObjectData[], mapWidth: number, mapHeight: number): void {
+        this.clearRoot(this.resourceRoot);
+        const resourceOnly = resources.filter((object) => object.kind === WorldObjectKind.Resource);
+        for (const objectData of resourceOnly) {
+            const definition = getWorldVisualDefinition(objectData.visualId);
+            const node = new Node(this.getNodeName(objectData));
+            node.setParent(this.resourceRoot);
+            node.layer = this.resourceRoot.layer;
+            node.setPosition(gridRectToWorldCenter(objectData.gridX, objectData.gridY, definition.w, definition.h, mapWidth, mapHeight));
+            node.setScale(GRID_RENDER_SCALE, GRID_RENDER_SCALE, 1);
+            const transform = node.addComponent(UITransform);
+            transform.setContentSize(definition.w * GRID_SOURCE_SIZE, definition.h * GRID_SOURCE_SIZE);
+            const sprite = node.addComponent(Sprite);
+            sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+            sprite.spriteFrame = this.getOrCreateFrame(objectData.visualId);
+            const view = node.addComponent(WorldObjectView);
+            view.objectId = objectData.id;
+            view.kind = objectData.kind;
+            view.gridX = objectData.gridX;
+            view.gridY = objectData.gridY;
+            view.gridW = definition.w;
+            view.gridH = definition.h;
+            view.resourceType = objectData.resourceType ?? null;
+            const resourceType = objectData.resourceType;
+            if (resourceType === undefined) throw new Error(`[WorldObjectRenderer] resourceType missing: ${objectData.id}`);
+            const health = node.addComponent(HealthComponent);
+            const resourceDefinition = getResourceRuntimeDefinition(resourceType);
+            health.setup(resourceDefinition.maxHealth);
+            const healthBar = node.addComponent(HealthBarView);
+            healthBar.setup({ health, texture: this.resourceHealthBarTexture, localOffsetY: definition.h * GRID_SOURCE_SIZE / 2 + 3 });
+            const hitFlashView = node.addComponent(HitFlashView);
+            hitFlashView.setup({ sprite, baseMaterial: this.hitFlashMaterial });
+            const harvest = node.addComponent(ResourceHarvestComponent);
+            harvest.setup({ resourceType, health, inventory: this.resourceInventory, yieldPerDamage: resourceDefinition.yieldPerDamage });
+            const attackReceiver = node.addComponent(WorldObjectAttackReceiver);
+            attackReceiver.setup({
+                objectId: objectData.id,
+                combatEventHub: this.combatEventHub,
+                hitFlashView,
+                health,
+                damagePopupSpawner: this.damagePopupSpawner,
+                lifecycle: this.lifecycle,
+            });
+            node.addComponent(HoverInfoTarget).setup({
+                kind: HoverTargetKind.Resource,
+                scope: HoverTargetScope.World,
+                preferredPlacement: HoverPlacement.Right,
+                controller: this.hover,
+                getInfo: () => ({
+                    title: this.getResourceName(resourceType),
+                    rows: [
+                        { label: '剩余资源', value: `${health.getCurrentHealth()} / ${health.getMaxHealth()}` },
+                        { label: '采集效率', value: `${resourceDefinition.yieldPerDamage} resource / damage` },
+                    ],
+                }),
+            });
+            this.nodeByObjectId.set(objectData.id, node);
+        }
+    }
+
     public removeObject(objectId: string): boolean {
         const node = this.nodeByObjectId.get(objectId);
         if (!node) {

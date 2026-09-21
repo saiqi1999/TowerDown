@@ -40,4 +40,14 @@ export class WorldCellGrid {
         this.owners.delete(ownerId);
     }
     public getOwnerCells(ownerId: string): readonly GridCell[] { return this.owners.get(ownerId) ?? []; }
+    public replaceFrom(candidate: WorldCellGrid): void {
+        if (candidate.width !== this.width || candidate.height !== this.height) {
+            throw new Error('[WorldCellGrid] replaceFrom size mismatch.');
+        }
+        this.flags.set(candidate.flags);
+        this.owners.clear();
+        for (const [ownerId, cells] of candidate.owners) {
+            this.owners.set(ownerId, cells.map((cell) => ({ ...cell })));
+        }
+    }
 }

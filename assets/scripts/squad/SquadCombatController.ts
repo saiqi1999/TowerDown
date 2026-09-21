@@ -34,6 +34,13 @@ export class SquadCombatController extends Component {
     }
     public onGuardDefeated(): void { this.guardDefeatedPending = true; this.requestRetreat(); }
     public detachFromGuard(): void { this.currentGroup = null; this.state = SquadCombatState.Inactive; }
+    public resetForFloor(): void {
+        this.currentGroup?.markSquadRetreating(this.squadId);
+        this.currentGroup = null;
+        this.guardDefeatedPending = false;
+        for (const warrior of this.warriors) warrior.resetForFloor();
+        this.state = SquadCombatState.Inactive;
+    }
     public getSquadPosition(): GridPoint { return this.squadMotor.getGridPosition(); }
     public getWarriorIds(): readonly string[] { return this.warriors.map((warrior) => warrior.id); }
     public hasWarrior(id: string): boolean { return this.warriors.some((warrior) => warrior.id === id); }

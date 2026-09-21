@@ -17,10 +17,11 @@ export interface EnemyKillSnapshot {
 export type EnemyKillListener = (snapshot: EnemyKillSnapshot) => void;
 
 export class EnemyKillCounter {
-    private readonly validEnemyIds: ReadonlySet<string>;
+    private validEnemyIds: ReadonlySet<string>;
     private readonly defeatedIds = new Set<string>();
     private readonly listeners = new Set<EnemyKillListener>();
     private readonly requiredKills: number;
+    private floorInstanceId = '';
 
     constructor(validEnemyIds: readonly string[], requiredKills = 3) {
         if (requiredKills <= 0) {
@@ -30,13 +31,25 @@ export class EnemyKillCounter {
         this.requiredKills = requiredKills;
     }
 
-    public recordDefeat(enemyId: string): boolean {
+    public recordDefeat(enemyId: string, floorInstanceId?: string): boolean {
+        if (floorInstanceId !== undefined && floorInstanceId !== this.floorInstanceId) return false;
         if (!this.validEnemyIds.has(enemyId) || this.defeatedIds.has(enemyId)) {
             return false;
         }
         this.defeatedIds.add(enemyId);
         this.notify();
         return true;
+    }
+
+    public beginFloor(floorInstanceId: string, validEnemyIds: readonly string[]): void {
+        this.floorInstanceId = floorInstanceId;
+        this.validEnemyIds = new Set(validEnemyIds);
+        this.defeatedIds.clear();
+        this.notify();
+    }
+
+    public getFloorInstanceId(): string {
+        return this.floorInstanceId;
     }
 
     public getCount(): number {

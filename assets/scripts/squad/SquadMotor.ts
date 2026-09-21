@@ -54,6 +54,15 @@ export class SquadMotor extends Component {
         return this.lastDirection;
     }
 
+    public teleportForFloor(point: GridPoint): void {
+        this.waypoints = [];
+        this.waypointIndex = 0;
+        this.arrivedPending = false;
+        this.currentGridPoint = { ...point };
+        this.syncWorldPosition();
+        this.playIdle(this.lastDirection);
+    }
+
     public setWaypoints(waypoints: GridPoint[]): void {
         this.waypoints = waypoints.map((waypoint) => ({
             x: waypoint.x,

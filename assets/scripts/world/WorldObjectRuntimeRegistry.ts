@@ -28,4 +28,11 @@ export class WorldObjectRuntimeRegistry {
         }
         return objectData;
     }
+
+    public replaceResources(resources: readonly WorldObjectData[]): void {
+        for (const [id, object] of this.objects) {
+            if (object.kind === 1) this.objects.delete(id);
+        }
+        for (const resource of resources) this.objects.set(resource.id, resource);
+    }
 }

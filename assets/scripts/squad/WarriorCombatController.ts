@@ -38,6 +38,14 @@ export class WarriorCombatController extends Component implements CombatUnitRef 
     public getWorldGridPosition() { return this.motor.getWorldGridPosition(this.squadMotor.getGridPosition()); }
     public enterGuardCombat(group: MonsterGroupController): void { if (!this.isAlive()) return; this.group = group; this.target = null; this.state = WarriorCombatState.AcquiringTarget; }
     public exitCombat(): void { this.releaseTarget(); this.motor.stop(); this.animator.playIdle(); this.state = this.isAlive() ? WarriorCombatState.Inactive : WarriorCombatState.Dead; this.group = null; }
+    public resetForFloor(): void {
+        this.releaseTarget();
+        this.group = null;
+        this.motor.stop();
+        this.health.restoreFullForFloor();
+        this.animator.resetToIdleForFloor();
+        this.state = WarriorCombatState.Inactive;
+    }
     public getCombatState(): WarriorCombatState { return this.state; }
     // public update(dt: number): void {
     //     if (!this.isAlive() || !this.group || this.state === WarriorCombatState.Inactive || this.state === WarriorCombatState.Dead) return;

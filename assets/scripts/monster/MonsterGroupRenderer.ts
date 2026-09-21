@@ -32,10 +32,22 @@ export class MonsterGroupRenderer {
         private readonly hub: CombatEventHub,
         private readonly popup: DamagePopupSpawner,
         private readonly hover: HoverInfoController,
-        private readonly onMonsterDefeated?: (enemyId: string) => void,
+        private readonly onMonsterDefeated?: (enemyId: string, floorInstanceId?: string) => void,
     ) {}
-    public render(groups: readonly MonsterGroupData[], objects: readonly WorldObjectData[], mapWidth: number, mapHeight: number, registry?: MonsterRuntimeRegistry): void {
-        this.root.removeAllChildren();
+    public clear(): void {
+        for (const group of this.root.children) {
+            for (const monster of [...group.children]) {
+                monster.getComponent(MonsterAttackReceiver)?.dispose();
+                monster.removeFromParent();
+                monster.destroy();
+            }
+            group.removeFromParent();
+            group.destroy();
+        }
+    }
+    public render(groups: readonly MonsterGroupData[], objects: readonly WorldObjectData[], mapWidth: number, mapHeight: number, registry?: MonsterRuntimeRegistry, floorInstanceId?: string): void {
+        this.clear();
+        registry?.clear();
         for (const group of groups) {
             const guarded = objects.find((object) => object.id === group.guardedObjectId);
             if (!guarded) throw new Error(`[MonsterGroupRenderer] guarded object missing: ${group.guardedObjectId}`);
@@ -118,7 +130,7 @@ export class MonsterGroupRenderer {
                     health,
                     stats,
                     hub: this.hub,
-                    onDefeated: this.onMonsterDefeated,
+                    onDefeated: (enemyId) => this.onMonsterDefeated?.(enemyId, floorInstanceId),
                 });
                 groupController.addMonster(member.id, combat);
             }

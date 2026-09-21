@@ -40,6 +40,11 @@ export class HealthComponent extends Component {
         return this.currentHealth <= 0;
     }
 
+    public restoreFullForFloor(): void {
+        this.currentHealth = this.maxHealth;
+        this.notify(null);
+    }
+
     public takeDamage(amount: number): DamageResult {
         const requestedDamage = Math.max(0, amount);
         const healthBefore = this.currentHealth;

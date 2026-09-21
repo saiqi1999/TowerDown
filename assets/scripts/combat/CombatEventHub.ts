@@ -6,6 +6,8 @@ import {
 
 export class CombatEventHub {
     private readonly receivers = new Map<string, AttackImpactReceiver>();
+    private impactBlockedPredicate: (() => boolean) | null = null;
+    public setImpactBlockedPredicate(predicate: (() => boolean) | null): void { this.impactBlockedPredicate = predicate; }
 
     // Hub 明确要求一个 targetId 只对应一个接收端，避免后续同名对象把命中路由静默覆盖。
     public registerReceiver(
@@ -37,6 +39,7 @@ export class CombatEventHub {
     public emitAttackImpact(
         signal: AttackImpactSignal,
     ): AttackImpactResult | null {
+        if (this.impactBlockedPredicate?.()) return null;
         const receiver = this.receivers.get(signal.targetId);
         if (!receiver) {
             // 目标可能在命中边沿到来前已经被销毁，这里保留 warning 但不把竞态升级成异常。

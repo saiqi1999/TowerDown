@@ -78,6 +78,11 @@ import { HoverInfoPanelView } from '../ui/hover/HoverInfoPanelView';
 import { EnemyKillCounter } from '../combat/EnemyKillCounter';
 import { BaseInteractionController } from '../ui/base/BaseInteractionController';
 import { BasePanelView } from '../ui/base/BasePanelView';
+import { FloorTransitionController } from './FloorTransitionController';
+import { getStaticFloor, instantiateFloor } from './StaticFloorCatalog';
+import { SquadFloorRecovery } from '../squad/SquadFloorRecovery';
+import { WorldObjectView } from '../world/WorldObjectView';
+import { getBuildingDefinition } from '../building/BuildingCatalog';
 
 const { ccclass, property } = _decorator;
 
@@ -257,6 +262,7 @@ export class MainMapController extends Component {
             }
         }
         const enemyKillCounter = new EnemyKillCounter(defeatedEnemyIds, 3);
+        enemyKillCounter.beginFloor('f1', defeatedEnemyIds);
         const baseInteraction = new BaseInteractionController(enemyKillCounter);
         this.baseInteraction = baseInteraction;
         const basePanel = new BasePanelView(
@@ -333,7 +339,7 @@ export class MainMapController extends Component {
             STATIC_MAP[0]?.length ?? 0,
             STATIC_MAP.length,
         );
-        new MonsterGroupRenderer(
+        const monsterRenderer = new MonsterGroupRenderer(
             monsterRoot,
             slimeMoveTexture,
             slimeAttackTexture,
@@ -343,12 +349,14 @@ export class MainMapController extends Component {
             damagePopupSpawner,
             hoverInfo,
             (enemyId) => enemyKillCounter.recordDefeat(enemyId),
-        ).render(
+        );
+        monsterRenderer.render(
             STATIC_MONSTER_GROUPS,
             worldObjectRegistry.getAll(),
             STATIC_MAP[0]?.length ?? 0,
             STATIC_MAP.length,
             this.monsterRegistry,
+            'f1',
         );
 
         const navigator = new WorldNavigator(
@@ -376,6 +384,7 @@ export class MainMapController extends Component {
             STATIC_MAP[0]?.length ?? 0,
             STATIC_MAP.length,
         );
+        const recovery = new SquadFloorRecovery();
         const selectionNode = this.getOrCreateChild(mapRoot, 'SquadSelectionController');
         const selection = selectionNode.getComponent(SquadSelectionController)
             ?? selectionNode.addComponent(SquadSelectionController);
@@ -446,6 +455,92 @@ export class MainMapController extends Component {
             ghost,
         );
         buildToolController.setup(placementTool);
+        const transition = new FloorTransitionController({
+            counter: enemyKillCounter,
+            baseInteraction,
+            panel: basePanel,
+            commit: (floorInstanceId, mapId) => {
+                const instance = instantiateFloor(getStaticFloor(mapId), floorInstanceId);
+                const nextObjects = [worldObjectRegistry.get('base_main')!, ...instance.resources];
+                const candidateNavigation = new NavigationGridBuilder().build(STATIC_MAP, nextObjects);
+                const candidateCells = new WorldCellGrid(
+                    STATIC_MAP[0]?.length ?? 0,
+                    STATIC_MAP.length,
+                );
+                for (const object of nextObjects) {
+                    const visual = getWorldVisualDefinition(object.visualId);
+                    candidateCells.claimRect(
+                        object.id,
+                        object.kind === 0 ? WorldCellFlag.Base : WorldCellFlag.Resource,
+                        object.gridX,
+                        object.gridY,
+                        visual.w,
+                        visual.h,
+                    );
+                }
+                for (const entry of buildingRegistry.getAll()) {
+                    const definition = getBuildingDefinition(entry.data.definitionId);
+                    if (!definition) throw new Error(`[FloorTransition] building definition missing: ${entry.data.definitionId}`);
+                    candidateCells.claimRect(
+                        entry.data.id,
+                        WorldCellFlag.Building,
+                        entry.data.gridX,
+                        entry.data.gridY,
+                        definition.footprintW,
+                        definition.footprintH,
+                    );
+                    if (definition.blocksNavigation) {
+                        for (let y = entry.data.gridY; y < entry.data.gridY + definition.footprintH; y += 1) {
+                            for (let x = entry.data.gridX; x < entry.data.gridX + definition.footprintW; x += 1) {
+                                candidateNavigation.setBlocked(x, y);
+                            }
+                        }
+                    }
+                }
+                navigationGrid.replaceFrom(candidateNavigation);
+                worldCellGrid.replaceFrom(candidateCells);
+                lifecycle.clearPendingForFloorChange();
+                commandController.clearTargetsForFloorChange();
+                this.combatEventHub?.setImpactBlockedPredicate(() => transition.isTransitioning());
+                worldObjectRegistry.replaceResources(instance.resources);
+                this.worldObjectRenderer?.replaceResources(
+                    instance.resources,
+                    STATIC_MAP[0]?.length ?? 0,
+                    STATIC_MAP.length,
+                );
+                monsterRenderer.render(
+                    instance.monsterGroups,
+                    nextObjects,
+                    STATIC_MAP[0]?.length ?? 0,
+                    STATIC_MAP.length,
+                    this.monsterRegistry ?? undefined,
+                    floorInstanceId,
+                );
+                commandController.bindWorldObjectViews(
+                    this.node.getComponentsInChildren(WorldObjectView),
+                );
+                const ids: string[] = [];
+                for (const group of instance.monsterGroups) {
+                    for (const member of group.members) ids.push(member.id);
+                }
+                enemyKillCounter.beginFloor(floorInstanceId, ids);
+                const homeCells = new Map<string, import('../navigation/NavigationTypes').GridCell>();
+                const points = new Map<string, import('../navigation/NavigationTypes').GridPoint>();
+                const base = worldObjectRegistry.get('base_main');
+                const baseX = base?.gridX ?? 18;
+                const baseY = base?.gridY ?? 10;
+                let recoveryIndex = 0;
+                for (const [id] of squadHandles) {
+                    const point = { x: baseX + 1 + recoveryIndex * 2, y: baseY + 4 };
+                    recoveryIndex += 1;
+                    points.set(id, point);
+                    homeCells.set(id, { x: Math.floor(point.x), y: Math.floor(point.y) });
+                }
+                recovery.recover(squadHandles, homeCells, points);
+                this.combatEventHub?.setImpactBlockedPredicate(null);
+            },
+        });
+        transition.setupPanel();
         baseInteraction.setup({
             idleFrame: townCenterIdleFrame,
             readyFrame: townCenterReadyFrame,
@@ -457,7 +552,7 @@ export class MainMapController extends Component {
             },
         });
         buildToolController.setInputBlockedPredicate(() => baseInteraction.isOpen());
-        commandController.setInputBlockedPredicate(() => buildToolController.isActive() || baseInteraction.isOpen());
+        commandController.setInputBlockedPredicate(() => buildToolController.isActive() || baseInteraction.isOpen() || transition.isTransitioning());
         const cardStripNode = this.getOrCreateChild(hudRoot, 'BlueprintCardStrip');
         const cardStrip = new BuildCardStripController(
             cardStripNode,
@@ -480,10 +575,10 @@ export class MainMapController extends Component {
         );
         roster.setup();
         selection.setBeforeUserSelection(() => buildToolController.cancel());
-        selection.setInputBlockedPredicate(() => baseInteraction.isOpen());
+        selection.setInputBlockedPredicate(() => baseInteraction.isOpen() || transition.isTransitioning());
         const interactionUiNodes = [cardStripNode, rosterNode, basePanelRoot];
         buildToolController.setInputExcludedNodes(interactionUiNodes);
-        hoverInfo.setWorldHoverEnabledPredicate(() => !buildToolController.isActive() && !baseInteraction.isOpen());
+        hoverInfo.setWorldHoverEnabledPredicate(() => !buildToolController.isActive() && !baseInteraction.isOpen() && !transition.isTransitioning());
         hoverLayer.setSiblingIndex(hudRoot.children.length - 1);
         basePanelRoot.setSiblingIndex(hudRoot.children.length - 1);
         const viewportNode = this.getOrCreateChild(mapRoot, 'WorldViewportController');
