@@ -36,6 +36,7 @@ export class HoverInfoController extends Component {
     private pointer = new Vec2();
     private hasPointer = false;
     private windowId = 0;
+    private suspended = false;
     private worldHoverEnabled: () => boolean = () => true;
 
     public setup(panel: HoverInfoPanelView, hudTransform: UITransform): void {
@@ -49,9 +50,11 @@ export class HoverInfoController extends Component {
     }
 
     public setSuspended(suspended: boolean): void {
-        if (!suspended) return;
-        this.hideImmediately();
-        this.hasPointer = false;
+        this.suspended = suspended;
+        if (suspended) {
+            this.hideImmediately();
+            this.hasPointer = false;
+        }
     }
 
     public register(source: HoverInfoSource): void {
@@ -128,7 +131,7 @@ export class HoverInfoController extends Component {
     }
 
     private pickTarget(): HoverInfoSource | null {
-        if (!this.hasPointer) {
+        if (this.suspended || !this.hasPointer) {
             return null;
         }
 

@@ -402,16 +402,6 @@ export class MainMapController extends Component {
             mapHeight: STATIC_MAP.length,
             onBaseClicked: () => baseInteraction.open(),
         });
-        baseInteraction.setup({
-            idleFrame: townCenterIdleFrame,
-            readyFrame: townCenterReadyFrame,
-            panel: basePanel,
-            setBaseSpriteFrame: (frame) => this.setBaseSpriteFrame(frame),
-            onOpenStateChanged: (open) => {
-                if (open) buildToolController?.cancel();
-                hoverInfo.setSuspended(open);
-            },
-        });
         const resourceHudNode = this.getOrCreateChild(hudRoot, 'ResourceHud');
         const resourceHud = resourceHudNode.getComponent(ResourceHudView)
             ?? resourceHudNode.addComponent(ResourceHudView);
@@ -456,6 +446,16 @@ export class MainMapController extends Component {
             ghost,
         );
         buildToolController.setup(placementTool);
+        baseInteraction.setup({
+            idleFrame: townCenterIdleFrame,
+            readyFrame: townCenterReadyFrame,
+            panel: basePanel,
+            setBaseSpriteFrame: (frame) => this.setBaseSpriteFrame(frame),
+            onOpenStateChanged: (open) => {
+                if (open) buildToolController.cancel();
+                hoverInfo.setSuspended(open);
+            },
+        });
         buildToolController.setInputBlockedPredicate(() => baseInteraction.isOpen());
         commandController.setInputBlockedPredicate(() => buildToolController.isActive() || baseInteraction.isOpen());
         const cardStripNode = this.getOrCreateChild(hudRoot, 'BlueprintCardStrip');
