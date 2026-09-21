@@ -50,6 +50,7 @@ export interface HoverInfoTargetConfig {
     readonly preferredPlacement: HoverPlacement;
     readonly controller: HoverInfoController;
     readonly getInfo: () => HoverInfoModel;
+    readonly onHoverChanged?: (hovered: boolean) => void;
 }
 
 export interface HoverInfoSource {
@@ -58,4 +59,5 @@ export interface HoverInfoSource {
     readonly scope: HoverTargetScope;
     readonly preferredPlacement: HoverPlacement;
     readonly getInfo: () => HoverInfoModel;
+    readonly onHoverChanged?: (hovered: boolean) => void;
 }

@@ -36,10 +36,13 @@ import { HoverInfoTarget } from '../ui/hover/HoverInfoTarget';
 import { HoverPlacement, HoverTargetKind, HoverTargetScope } from '../ui/hover/HoverInfoTypes';
 import { type HoverInfoController } from '../ui/hover/HoverInfoController';
 import { type BaseInteractionController } from '../ui/base/BaseInteractionController';
+import { InteractionFeedbackPresetId } from '../feedback/interaction/InteractionFeedbackConfig';
+import { InteractionFeedbackView } from '../feedback/interaction/InteractionFeedbackView';
 
 export class WorldObjectRenderer {
     private readonly frameCache = new Map<WorldVisualId, SpriteFrame>();
     private readonly nodeByObjectId = new Map<string, Node>();
+    private readonly baseFeedbackByObjectId = new Map<string, InteractionFeedbackView>();
 
     constructor(
         private readonly structureRoot: Node,
@@ -53,6 +56,7 @@ export class WorldObjectRenderer {
         private readonly lifecycle: WorldObjectLifecycleController,
         private readonly resourceHealthBarTexture: Texture2D,
         private readonly hover: HoverInfoController,
+        private readonly interactionBrightnessMaterial: Material | null,
         private readonly baseInteraction: BaseInteractionController | null = null,
     ) {}
 
@@ -92,9 +96,9 @@ export class WorldObjectRenderer {
                 definition.h * GRID_SOURCE_SIZE,
             );
 
-            const sprite = node.addComponent(Sprite);
-            sprite.sizeMode = Sprite.SizeMode.CUSTOM;
-            sprite.spriteFrame = this.getOrCreateFrame(objectData.visualId);
+            const sprite = objectData.kind === WorldObjectKind.Base
+                ? this.createBaseVisual(node, objectData, definition.w * GRID_SOURCE_SIZE, definition.h * GRID_SOURCE_SIZE)
+                : this.createRootSprite(node, objectData.visualId);
 
             const view = node.addComponent(WorldObjectView);
             view.objectId = objectData.id;
@@ -155,6 +159,7 @@ export class WorldObjectRenderer {
                     }),
                 });
             } else {
+                const feedback = this.baseFeedbackByObjectId.get(objectData.id) ?? null;
                 node.addComponent(HoverInfoTarget).setup({
                     kind: HoverTargetKind.Base,
                     scope: HoverTargetScope.World,
@@ -165,6 +170,7 @@ export class WorldObjectRenderer {
                         subtitle: '文明核心',
                         footer: this.baseInteraction?.getHoverFooter() ?? '基地被摧毁则 Run 失败（未来）',
                     }),
+                    onHoverChanged: (hovered) => feedback?.setHovered(hovered),
                 });
             }
         }
@@ -248,6 +254,24 @@ export class WorldObjectRenderer {
         return this.nodeByObjectId.get(objectId) ?? null;
     }
 
+    public setBaseSpriteFrame(frame: SpriteFrame): void {
+        const node = this.nodeByObjectId.get('base_main');
+        const sprite = node?.getChildByName('FeedbackRoot')
+            ?.getChildByName('SpriteVisual')
+            ?.getComponent(Sprite) ?? null;
+        if (!sprite) {
+            console.warn('[WorldObjectRenderer] base visual sprite missing for frame swap.');
+            return;
+        }
+
+        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        sprite.spriteFrame = frame;
+    }
+
+    public playBaseFeedbackClick(objectId = 'base_main'): void {
+        this.baseFeedbackByObjectId.get(objectId)?.playClick();
+    }
+
     private validateObjects(objects: readonly WorldObjectData[], mapWidth: number, mapHeight: number): void {
         const occupiedCells = new Set<string>();
 
@@ -284,6 +308,7 @@ export class WorldObjectRenderer {
             const view = child.getComponent(WorldObjectView);
             if (view) {
                 this.nodeByObjectId.delete(view.objectId);
+                this.baseFeedbackByObjectId.delete(view.objectId);
             }
             // 先从树上摘掉再 destroy，避免同一帧重建时旧 receiver 仍占着 targetId。
             child.removeFromParent();
@@ -325,6 +350,42 @@ export class WorldObjectRenderer {
         this.frameCache.set(visualId, frame);
 
         return frame;
+    }
+
+    private createRootSprite(node: Node, visualId: WorldVisualId): Sprite {
+        const sprite = node.addComponent(Sprite);
+        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        sprite.spriteFrame = this.getOrCreateFrame(visualId);
+        return sprite;
+    }
+
+    private createBaseVisual(
+        node: Node,
+        objectData: WorldObjectData,
+        width: number,
+        height: number,
+    ): Sprite {
+        const feedbackRoot = new Node('FeedbackRoot');
+        feedbackRoot.setParent(node);
+        feedbackRoot.layer = node.layer;
+        feedbackRoot.setPosition(0, -height / 2, 0);
+        const spriteNode = new Node('SpriteVisual');
+        spriteNode.setParent(feedbackRoot);
+        spriteNode.layer = node.layer;
+        spriteNode.setPosition(0, height / 2, 0);
+        spriteNode.addComponent(UITransform).setContentSize(width, height);
+        const sprite = spriteNode.addComponent(Sprite);
+        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        sprite.spriteFrame = this.getOrCreateFrame(objectData.visualId);
+        const feedback = node.addComponent(InteractionFeedbackView);
+        feedback.setup({
+            visualRoot: feedbackRoot,
+            presetId: InteractionFeedbackPresetId.WorldBuilding,
+            brightnessTargets: [sprite],
+            brightnessMaterial: this.interactionBrightnessMaterial,
+        });
+        this.baseFeedbackByObjectId.set(objectData.id, feedback);
+        return sprite;
     }
 
     private getTexture(atlas: WorldAtlasKey): Texture2D {

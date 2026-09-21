@@ -112,6 +112,9 @@ export class MainMapController extends Component {
     @property(Material)
     public hitFlashMaterial: Material | null = null;
 
+    @property(Material)
+    public interactionBrightnessMaterial: Material | null = null;
+
     @property(Texture2D)
     public friendlyHealthBarTexture: Texture2D | null = null;
 
@@ -207,6 +210,11 @@ export class MainMapController extends Component {
             this.hitFlashMaterial,
             'hitFlashMaterial',
         );
+        const interactionBrightnessMaterial = await this.resolveMaterial(
+            this.interactionBrightnessMaterial,
+            '4be43fba-c35a-4755-bf36-9318c30c364e',
+            'interaction brightness material',
+        );
         const friendlyHealthBarTexture = this.requireInspectorTexture(
             this.friendlyHealthBarTexture,
             'friendlyHealthBarTexture',
@@ -282,6 +290,7 @@ export class MainMapController extends Component {
         this.targetFlagTexture = targetFlagTexture;
         this.warriorAttackTexture = warriorAttackTexture;
         this.hitFlashMaterial = hitFlashMaterial;
+        this.interactionBrightnessMaterial = interactionBrightnessMaterial;
         this.friendlyHealthBarTexture = friendlyHealthBarTexture;
         this.resourceHealthBarTexture = resourceHealthBarTexture;
         this.combatEventHub = new CombatEventHub();
@@ -331,6 +340,7 @@ export class MainMapController extends Component {
             lifecycle,
             resourceHealthBarTexture,
             hoverInfo,
+            interactionBrightnessMaterial,
             baseInteraction,
         );
         lifecycle.setup(worldObjectRegistry, this.worldObjectRenderer, navigationGrid, worldCellGrid);
@@ -410,6 +420,7 @@ export class MainMapController extends Component {
             mapWidth: STATIC_MAP[0]?.length ?? 0,
             mapHeight: STATIC_MAP.length,
             onBaseClicked: () => baseInteraction.open(),
+            onBaseFeedbackClick: (objectId) => this.worldObjectRenderer?.playBaseFeedbackClick(objectId),
         });
         const resourceHudNode = this.getOrCreateChild(hudRoot, 'ResourceHud');
         const resourceHud = resourceHudNode.getComponent(ResourceHudView)
@@ -431,6 +442,7 @@ export class MainMapController extends Component {
             STATIC_MAP[0]?.length ?? 0,
             STATIC_MAP.length,
             hoverInfo,
+            interactionBrightnessMaterial,
         );
         const blueprintInventory = new BuildingBlueprintInventory();
         const validator = new BuildingPlacementValidator(STATIC_MAP, worldCellGrid, resourceInventory);
@@ -562,6 +574,7 @@ export class MainMapController extends Component {
             buildToolController,
             buildingUiAssets.blueprintCardFrame,
             hoverInfo,
+            interactionBrightnessMaterial,
         );
         cardStrip.setup();
         const rosterNode = this.getOrCreateChild(hudRoot, 'SquadRosterRoot');
@@ -572,6 +585,7 @@ export class MainMapController extends Component {
             selection,
             squadPresentationById,
             hoverInfo,
+            interactionBrightnessMaterial,
         );
         roster.setup();
         selection.setBeforeUserSelection(() => buildToolController.cancel());
@@ -604,16 +618,7 @@ export class MainMapController extends Component {
     }
 
     private setBaseSpriteFrame(frame: SpriteFrame): void {
-        const node = this.worldObjectRenderer?.getNode('base_main');
-        if (!node) {
-            console.warn('[MainMapController] base_main node missing for base sprite swap.');
-            return;
-        }
-        const transform = node.getComponent(UITransform) ?? node.addComponent(UITransform);
-        transform.setContentSize(64, 64);
-        const sprite = node.getComponent(Sprite) ?? node.addComponent(Sprite);
-        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
-        sprite.spriteFrame = frame;
+        this.worldObjectRenderer?.setBaseSpriteFrame(frame);
     }
 
     private beginGuardCombat(
@@ -753,5 +758,25 @@ export class MainMapController extends Component {
         }
 
         return material;
+    }
+
+    private async resolveMaterial(
+        material: Material | null,
+        uuid: string,
+        label: string,
+    ): Promise<Material> {
+        if (material) {
+            return material;
+        }
+
+        return new Promise((resolve, reject) => {
+            assetManager.loadAny({ uuid }, (error, asset: Material | null) => {
+                if (error || !asset) {
+                    reject(error ?? new Error(`[MainMapController] failed to load ${label}.`));
+                    return;
+                }
+                resolve(asset);
+            });
+        });
     }
 }

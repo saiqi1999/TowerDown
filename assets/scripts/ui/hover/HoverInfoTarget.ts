@@ -6,10 +6,10 @@
  * This file owns one node's hover source registration and unregistration lifecycle.
  *
  * This file deliberately does NOT:
- * It does not decide whether the pointer is inside the node, own tooltip state, or cache coordinates.
+ * It does not own tooltip state, rank hover targets, or issue gameplay commands.
  */
-import { _decorator, Component } from 'cc';
-import { type HoverInfoTargetConfig } from './HoverInfoTypes';
+import { _decorator, Component, EventMouse, Node } from 'cc';
+import { HoverTargetScope, type HoverInfoTargetConfig } from './HoverInfoTypes';
 
 const { ccclass } = _decorator;
 
@@ -19,9 +19,7 @@ export class HoverInfoTarget extends Component {
     private registered = false;
 
     public setup(config: HoverInfoTargetConfig): void {
-        if (this.registered && this.config?.controller !== config.controller) {
-            this.unregister();
-        }
+        this.unregister();
         this.config = config;
         this.registerIfReady();
     }
@@ -50,7 +48,12 @@ export class HoverInfoTarget extends Component {
             scope: config.scope,
             preferredPlacement: config.preferredPlacement,
             getInfo: config.getInfo,
+            onHoverChanged: config.onHoverChanged,
         });
+        if (config.scope === HoverTargetScope.UI) {
+            this.node.on(Node.EventType.MOUSE_ENTER, this.onMouseEnter, this);
+            this.node.on(Node.EventType.MOUSE_LEAVE, this.onMouseLeave, this);
+        }
         this.registered = true;
     }
 
@@ -59,7 +62,17 @@ export class HoverInfoTarget extends Component {
             return;
         }
 
+        this.node.off(Node.EventType.MOUSE_ENTER, this.onMouseEnter, this);
+        this.node.off(Node.EventType.MOUSE_LEAVE, this.onMouseLeave, this);
         this.config.controller.unregister(this.node);
         this.registered = false;
+    }
+
+    private onMouseEnter(event: EventMouse): void {
+        this.config?.controller.notifyUiEnter(this.node, event);
+    }
+
+    private onMouseLeave(): void {
+        this.config?.controller.notifyUiLeave(this.node);
     }
 }

@@ -9,7 +9,7 @@
  * This file deliberately does NOT:
  * 不修改资源、不解锁蓝图、不决定是否能落地，也不拥有 Build Mode 状态。
  */
-import { Button, Color, Component, Graphics, Label, Node, Sprite, SpriteFrame, UIOpacity, UITransform, _decorator } from 'cc';
+import { Button, Color, Component, Graphics, Label, Material, Node, Sprite, SpriteFrame, UIOpacity, UITransform, _decorator } from 'cc';
 import { ResourceType } from '../world/WorldObjectTypes';
 import { type BuildingDefinition } from './BuildingTypes';
 import { BuildingSpriteFrameFactory } from './BuildingSpriteFrameFactory';
@@ -28,6 +28,8 @@ import {
 } from '../ui/hover/HoverInfoTypes';
 import { type HoverInfoController } from '../ui/hover/HoverInfoController';
 import { BuildingCategory } from './BuildingTypes';
+import { InteractionFeedbackView } from '../feedback/interaction/InteractionFeedbackView';
+import { InteractionFeedbackPresetId } from '../feedback/interaction/InteractionFeedbackConfig';
 
 const { ccclass } = _decorator;
 
@@ -36,6 +38,8 @@ export class BuildingBlueprintCardView extends Component {
     private button: Button | null = null;
     private nameLabel: Label | null = null;
     private opacity: UIOpacity | null = null;
+    private visualRoot: Node | null = null;
+    private feedback: InteractionFeedbackView | null = null;
 
     public setup(
         definition: BuildingDefinition,
@@ -43,11 +47,17 @@ export class BuildingBlueprintCardView extends Component {
         cardFrame: SpriteFrame | null,
         onSelect: () => void,
         hover: HoverInfoController,
+        brightnessMaterial: Material | null,
     ): void {
         (this.node.getComponent(UITransform) ?? this.node.addComponent(UITransform))
             .setContentSize(BLUEPRINT_CARD_WIDTH, BLUEPRINT_CARD_HEIGHT);
         this.opacity = this.node.getComponent(UIOpacity) ?? this.node.addComponent(UIOpacity);
-        const background = this.node.getComponent(Sprite) ?? this.node.addComponent(Sprite);
+        this.visualRoot = this.getOrCreateRoot('FeedbackRoot', this.node);
+        this.visualRoot.setPosition(0, 0, 0);
+        const backgroundNode = this.getChild('Background');
+        (backgroundNode.getComponent(UITransform) ?? backgroundNode.addComponent(UITransform))
+            .setContentSize(BLUEPRINT_CARD_WIDTH, BLUEPRINT_CARD_HEIGHT);
+        const background = backgroundNode.getComponent(Sprite) ?? backgroundNode.addComponent(Sprite);
         background.sizeMode = Sprite.SizeMode.CUSTOM;
         background.spriteFrame = cardFrame;
         background.color = cardFrame ? Color.WHITE : new Color(46, 42, 36, 230);
@@ -89,8 +99,23 @@ export class BuildingBlueprintCardView extends Component {
         this.getChild('SelectionOutline').getComponent(Graphics)
             ?? this.getChild('SelectionOutline').addComponent(Graphics);
         this.button = this.node.getComponent(Button) ?? this.node.addComponent(Button);
+        this.button.transition = Button.Transition.NONE;
         this.button.node.off(Button.EventType.CLICK);
-        this.button.node.on(Button.EventType.CLICK, onSelect);
+        this.button.node.on(Button.EventType.CLICK, () => {
+            if (!this.button?.interactable) {
+                return;
+            }
+            this.feedback?.playClick();
+            onSelect();
+        });
+        this.feedback = this.node.getComponent(InteractionFeedbackView)
+            ?? this.node.addComponent(InteractionFeedbackView);
+        this.feedback.setup({
+            visualRoot: this.visualRoot,
+            presetId: InteractionFeedbackPresetId.BlueprintCard,
+            brightnessTargets: [background, icon],
+            brightnessMaterial,
+        });
         (this.node.getComponent(HoverInfoTarget) ?? this.node.addComponent(HoverInfoTarget)).setup({
             kind: HoverTargetKind.Blueprint,
             scope: HoverTargetScope.UI,
@@ -107,6 +132,7 @@ export class BuildingBlueprintCardView extends Component {
                         : []),
                 ],
             }),
+            onHoverChanged: (hovered) => this.feedback?.setHovered(hovered),
         });
         this.setSelected(false);
         this.setAffordable(true);
@@ -126,11 +152,20 @@ export class BuildingBlueprintCardView extends Component {
     public setAffordable(affordable: boolean): void {
         if (this.button) this.button.interactable = affordable;
         if (this.opacity) this.opacity.opacity = affordable ? 255 : 115;
+        this.feedback?.setInteractionEnabled(affordable);
     }
 
     private getChild(name: string): Node {
-        const child = this.node.getChildByName(name) ?? new Node(name);
-        if (!child.parent) child.setParent(this.node);
+        const parent = this.visualRoot ?? this.node;
+        const child = parent.getChildByName(name) ?? new Node(name);
+        if (!child.parent) child.setParent(parent);
+        return child;
+    }
+
+    private getOrCreateRoot(name: string, parent: Node): Node {
+        const child = parent.getChildByName(name) ?? new Node(name);
+        if (!child.parent) child.setParent(parent);
+        child.layer = parent.layer;
         return child;
     }
 

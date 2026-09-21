@@ -29,6 +29,7 @@ export class HoverInfoController extends Component {
     private hudTransform: UITransform | null = null;
     private hovered: HoverInfoSource | null = null;
     private current: HoverInfoSource | null = null;
+    private uiCandidate: HoverInfoSource | null = null;
     private showTimer = 0;
     private hideTimer = -1;
     private refreshTimer = 0;
@@ -52,7 +53,7 @@ export class HoverInfoController extends Component {
     public setSuspended(suspended: boolean): void {
         this.suspended = suspended;
         if (suspended) {
-            this.hideImmediately();
+            this.clearHover();
             this.hasPointer = false;
         }
     }
@@ -62,19 +63,46 @@ export class HoverInfoController extends Component {
     }
 
     public unregister(anchor: Node): void {
+        if (this.uiCandidate?.anchor === anchor) {
+            this.uiCandidate = null;
+        }
         this.targets.delete(anchor);
         if (this.hovered?.anchor === anchor) {
-            this.hovered = null;
+            this.changeHovered(null);
+        }
+    }
+
+    public notifyUiEnter(anchor: Node, event?: EventMouse): void {
+        if (event) {
+            const location = event.getUILocation();
+            this.pointer.set(location.x, location.y);
+            this.windowId = event.windowId;
+            this.hasPointer = true;
         }
 
-        if (this.current?.anchor === anchor) {
-            this.hideImmediately();
+        const source = this.targets.get(anchor) ?? null;
+        if (!source || source.scope !== HoverTargetScope.UI || !this.isSourceActive(source)) {
+            return;
+        }
+
+        this.uiCandidate = source;
+        if (!this.suspended) {
+            this.changeHovered(source);
+        }
+    }
+
+    public notifyUiLeave(anchor: Node): void {
+        if (this.uiCandidate?.anchor === anchor) {
+            this.uiCandidate = null;
+        }
+        if (this.hovered?.anchor === anchor) {
+            this.changeHovered(null);
         }
     }
 
     update(dt: number): void {
         if (this.current?.scope === HoverTargetScope.World && !this.worldHoverEnabled()) {
-            this.hideImmediately();
+            this.changeHovered(null);
             return;
         }
 
@@ -109,28 +137,32 @@ export class HoverInfoController extends Component {
     protected onDestroy(): void {
         input.off(Input.EventType.MOUSE_MOVE, this.onMouseMove, this);
         this.targets.clear();
+        this.clearHover();
+        this.uiCandidate = null;
+    }
+
+    private clearHover(): void {
+        this.changeHovered(null);
         this.hovered = null;
         this.current = null;
     }
 
     private resolveHoveredTarget(): void {
-        const next = this.pickTarget();
-        if (next?.anchor === this.hovered?.anchor) {
+        if (this.suspended) {
+            this.changeHovered(null);
             return;
         }
 
-        const previous = this.hovered;
-        this.hovered = next;
-
-        if (next) {
-            this.onHoverChanged(previous, next);
+        if (this.uiCandidate && this.isSourceActive(this.uiCandidate)) {
+            this.changeHovered(this.uiCandidate);
             return;
         }
+        this.uiCandidate = null;
 
-        this.beginHide();
+        this.changeHovered(this.pickWorldTarget());
     }
 
-    private pickTarget(): HoverInfoSource | null {
+    private pickWorldTarget(): HoverInfoSource | null {
         if (this.suspended || !this.hasPointer) {
             return null;
         }
@@ -139,15 +171,15 @@ export class HoverInfoController extends Component {
         let bestPriority = Number.NEGATIVE_INFINITY;
 
         for (const source of this.targets.values()) {
+            if (source.scope !== HoverTargetScope.World) {
+                continue;
+            }
+
+            if (!this.isSourceActive(source)) {
+                continue;
+            }
+
             const anchor = source.anchor;
-            if (!anchor.isValid || !anchor.activeInHierarchy) {
-                continue;
-            }
-
-            if (source.scope === HoverTargetScope.World && !this.worldHoverEnabled()) {
-                continue;
-            }
-
             const transform = anchor.getComponent(UITransform);
             if (!transform || !transform.hitTest(this.pointer, this.windowId)) {
                 continue;
@@ -161,6 +193,13 @@ export class HoverInfoController extends Component {
         }
 
         return best;
+    }
+
+    private isSourceActive(source: HoverInfoSource): boolean {
+        if (!source.anchor.isValid || !source.anchor.activeInHierarchy) {
+            return false;
+        }
+        return source.scope !== HoverTargetScope.World || this.worldHoverEnabled();
     }
 
     private getPriority(source: HoverInfoSource): number {
@@ -182,8 +221,21 @@ export class HoverInfoController extends Component {
         }
     }
 
-    private onHoverChanged(_previous: HoverInfoSource | null, next: HoverInfoSource): void {
-        this.beginShow(next);
+    private changeHovered(next: HoverInfoSource | null): void {
+        if (next?.anchor === this.hovered?.anchor) {
+            return;
+        }
+
+        this.hovered?.onHoverChanged?.(false);
+        this.hovered = next;
+
+        if (next) {
+            next.onHoverChanged?.(true);
+            this.beginShow(next);
+            return;
+        }
+
+        this.beginHide();
     }
 
     private beginShow(source: HoverInfoSource): void {
@@ -255,8 +307,10 @@ export class HoverInfoController extends Component {
     }
 
     private hideImmediately(): void {
+        this.hovered?.onHoverChanged?.(false);
         this.current = null;
         this.hovered = null;
+        this.uiCandidate = null;
         this.hideTimer = -1;
         this.panel?.setVisible(false);
     }

@@ -8,7 +8,7 @@
  * This file deliberately does NOT:
  * 不验证、不扣资源、不修改占格/导航，也不执行效果。
  */
-import { Node, Sprite, UITransform } from 'cc';
+import { Material, Node, Sprite, UITransform } from 'cc';
 import { GRID_RENDER_SCALE, GRID_SOURCE_SIZE } from '../grid/GridConfig';
 import { gridRectToWorldCenter } from '../grid/GridTransform';
 import { type BuildingDefinition, type BuildingInstanceData } from './BuildingTypes';
@@ -16,14 +16,43 @@ import { BuildingSpriteFrameFactory } from './BuildingSpriteFrameFactory';
 import { HoverInfoTarget } from '../ui/hover/HoverInfoTarget';
 import { HoverPlacement, HoverTargetKind, HoverTargetScope } from '../ui/hover/HoverInfoTypes';
 import { type HoverInfoController } from '../ui/hover/HoverInfoController';
+import { InteractionFeedbackView } from '../feedback/interaction/InteractionFeedbackView';
+import { InteractionFeedbackPresetId } from '../feedback/interaction/InteractionFeedbackConfig';
+import { FeedbackClickTarget } from '../feedback/interaction/FeedbackClickTarget';
+
 export class BuildingRenderer {
-    constructor(private readonly root: Node, private readonly factory: BuildingSpriteFrameFactory, private readonly mapWidth: number, private readonly mapHeight: number, private readonly hover: HoverInfoController) {}
+    constructor(
+        private readonly root: Node,
+        private readonly factory: BuildingSpriteFrameFactory,
+        private readonly mapWidth: number,
+        private readonly mapHeight: number,
+        private readonly hover: HoverInfoController,
+        private readonly brightnessMaterial: Material | null,
+    ) {}
+
     public create(instance: BuildingInstanceData, definition: BuildingDefinition): Node {
         const node = new Node(`Building_${instance.id}`); node.setParent(this.root); node.layer = this.root.layer;
         node.addComponent(UITransform).setContentSize(definition.visualWidthPixels, definition.visualHeightPixels);
-        const sprite = node.addComponent(Sprite); sprite.sizeMode = Sprite.SizeMode.CUSTOM; sprite.spriteFrame = this.factory.getFrame(definition);
+        const feedbackRoot = new Node('FeedbackRoot');
+        feedbackRoot.setParent(node);
+        feedbackRoot.layer = node.layer;
+        feedbackRoot.setPosition(0, -definition.visualHeightPixels / 2, 0);
+        const spriteNode = new Node('SpriteVisual');
+        spriteNode.setParent(feedbackRoot);
+        spriteNode.layer = node.layer;
+        spriteNode.setPosition(0, definition.visualHeightPixels / 2, 0);
+        spriteNode.addComponent(UITransform).setContentSize(definition.visualWidthPixels, definition.visualHeightPixels);
+        const sprite = spriteNode.addComponent(Sprite); sprite.sizeMode = Sprite.SizeMode.CUSTOM; sprite.spriteFrame = this.factory.getFrame(definition);
         node.setScale(definition.visualScale, definition.visualScale, 1);
         node.setPosition(gridRectToWorldCenter(instance.gridX, instance.gridY, definition.footprintW, definition.footprintH, this.mapWidth, this.mapHeight));
+        const feedback = node.addComponent(InteractionFeedbackView);
+        feedback.setup({
+            visualRoot: feedbackRoot,
+            presetId: InteractionFeedbackPresetId.WorldBuilding,
+            brightnessTargets: [sprite],
+            brightnessMaterial: this.brightnessMaterial,
+        });
+        node.addComponent(FeedbackClickTarget).setup(feedback);
         node.addComponent(HoverInfoTarget).setup({
             kind: HoverTargetKind.Building,
             scope: HoverTargetScope.World,
@@ -38,6 +67,7 @@ export class BuildingRenderer {
                     { label: '占地', value: `${definition.footprintW}×${definition.footprintH}` },
                 ],
             }),
+            onHoverChanged: (hovered) => feedback.setHovered(hovered),
         });
         return node;
     }

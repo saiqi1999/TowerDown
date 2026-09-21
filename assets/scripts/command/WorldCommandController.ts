@@ -22,6 +22,7 @@ export interface WorldCommandControllerConfig {
     mapWidth: number;
     mapHeight: number;
     onBaseClicked?: () => void;
+    onBaseFeedbackClick?: (objectId: string) => void;
 }
 
 @ccclass('WorldCommandController')
@@ -39,6 +40,7 @@ export class WorldCommandController extends Component {
     private readonly flagBySquad = new Map<string, TargetFlagView>();
     private inputBlockedPredicate: (() => boolean) | null = null;
     private onBaseClicked: (() => void) | null = null;
+    private onBaseFeedbackClick: ((objectId: string) => void) | null = null;
 
     public setInputBlockedPredicate(predicate: (() => boolean) | null): void {
         this.inputBlockedPredicate = predicate;
@@ -55,6 +57,7 @@ export class WorldCommandController extends Component {
         this.squadPresentationById = config.squadPresentationById;
         this.flagFrames = createTargetFlagFrames(config.targetFlagTexture);
         this.onBaseClicked = config.onBaseClicked ?? null;
+        this.onBaseFeedbackClick = config.onBaseFeedbackClick ?? null;
 
         this.bindWorldObjectViews(config.worldObjectRoot.getComponentsInChildren(WorldObjectView));
     }
@@ -90,6 +93,7 @@ export class WorldCommandController extends Component {
         }
         const target = this.worldObjectRegistry?.get(objectId) ?? null;
         if (target?.kind === WorldObjectKind.Base) {
+            this.onBaseFeedbackClick?.(objectId);
             this.onBaseClicked?.();
             return;
         }

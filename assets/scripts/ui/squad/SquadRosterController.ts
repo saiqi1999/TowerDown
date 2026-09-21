@@ -8,7 +8,7 @@
  * This file deliberately does NOT:
  * It does not own selection truth, issue target commands, or control Build Mode.
  */
-import { Node, UITransform } from 'cc';
+import { Material, Node, UITransform } from 'cc';
 import { SquadSelectionController, type SquadSelectionState } from '../../squad/SquadSelectionController';
 import { type SquadRuntimeHandle, type SquadSpawnData } from '../../squad/SquadTypes';
 import { type SquadPresentation } from './SquadPresentationConfig';
@@ -33,6 +33,7 @@ export class SquadRosterController {
         private readonly selection: SquadSelectionController,
         private readonly presentationById: ReadonlyMap<string, SquadPresentation>,
         private readonly hover: HoverInfoController,
+        private readonly brightnessMaterial: Material | null,
     ) {}
 
     public setup(): void {
@@ -61,6 +62,7 @@ export class SquadRosterController {
                 squad,
                 handle,
                 hover: this.hover,
+                brightnessMaterial: this.brightnessMaterial,
             });
             this.itemViews.set(squad.id, view);
         });

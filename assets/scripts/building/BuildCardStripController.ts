@@ -10,7 +10,7 @@
  * 不拥有 Blueprint 解锁真相、不拥有 Build Mode 状态、不扣资源、
  * 不判断地图 placement 合法性。
  */
-import { Node, SpriteFrame, UITransform } from 'cc';
+import { Material, Node, SpriteFrame, UITransform } from 'cc';
 import { ResourceInventory, type ResourceInventorySnapshot } from '../economy/ResourceInventory';
 import { getAllBuildingDefinitions } from './BuildingCatalog';
 import { BuildingBlueprintInventory } from './BuildingBlueprintInventory';
@@ -34,6 +34,7 @@ export class BuildCardStripController {
         private readonly tool: BuildToolController,
         private readonly cardFrame: SpriteFrame | null,
         private readonly hover: HoverInfoController,
+        private readonly brightnessMaterial: Material | null,
     ) {}
 
     public setup(): void {
@@ -68,7 +69,7 @@ export class BuildCardStripController {
             node.layer = this.root.layer;
             node.setPosition(-totalWidth / 2 + BLUEPRINT_CARD_WIDTH / 2 + index * (BLUEPRINT_CARD_WIDTH + BLUEPRINT_CARD_GAP), 0, 0);
             const view = node.addComponent(BuildingBlueprintCardView);
-            view.setup(definition, this.factory, this.cardFrame, () => this.tool.select(id), this.hover);
+            view.setup(definition, this.factory, this.cardFrame, () => this.tool.select(id), this.hover, this.brightnessMaterial);
             this.cardViews.set(id, view);
         });
         this.syncSelected(this.tool.getState());
