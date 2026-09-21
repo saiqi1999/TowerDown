@@ -47,7 +47,7 @@ export class BasePanelView {
         label.string = '返回';
         label.fontSize = 18;
         label.lineHeight = 22;
-        label.color = new Color(150, 210, 255, 255);
+        label.color = Color.BLACK;
         label.horizontalAlign = Label.HorizontalAlign.CENTER;
         label.verticalAlign = Label.VerticalAlign.CENTER;
         this.returnNode.on(Node.EventType.TOUCH_END, () => {
@@ -149,7 +149,7 @@ export class BasePanelView {
         const title = titleNode.getComponent(Label) ?? titleNode.addComponent(Label);
         title.fontSize = 20;
         title.lineHeight = 26;
-        title.color = new Color(255, 238, 186);
+        title.color = Color.BLACK;
         title.horizontalAlign = Label.HorizontalAlign.CENTER;
         title.verticalAlign = Label.VerticalAlign.CENTER;
         titleNode.getComponent(UITransform)?.setContentSize(320, 40);
@@ -158,7 +158,7 @@ export class BasePanelView {
         const detail = detailNode.getComponent(Label) ?? detailNode.addComponent(Label);
         detail.fontSize = 15;
         detail.lineHeight = 24;
-        detail.color = Color.WHITE;
+        detail.color = Color.BLACK;
         detail.horizontalAlign = Label.HorizontalAlign.CENTER;
         detail.verticalAlign = Label.VerticalAlign.CENTER;
         detailNode.getComponent(UITransform)?.setContentSize(320, 180);
