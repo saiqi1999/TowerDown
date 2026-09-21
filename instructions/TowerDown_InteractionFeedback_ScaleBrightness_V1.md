@@ -1,8 +1,8 @@
-# TowerDown 建筑与卡片交互反馈技术方案 V1.1：独立动画叠加
+# TowerDown 建筑与卡片交互反馈技术方案 V1.2：UI 原生进入退出与持续微提亮
 
 > 基于main提交 `ad31bb35efd24445148074d5c8f43d39e404e636`（next level），Cocos Creator 3.8.8。
 > 本轮交付技术方案，不修改运行时代码。目标：地图建筑、队伍UI、建筑蓝图卡的Hover与点击具有X/Y独立阻尼震荡缩放，并轻微提亮图片。
-> 不改变建造、选队、基地面板、地图切换与部队整备业务。继续复用已有集中Hover控制器。
+> 不改变建造、选队、基地面板、地图切换与部队整备业务。UI 改用 MOUSE_ENTER / MOUSE_LEAVE 上报，集中控制器仍唯一管理 Hover 身份与 Tooltip；世界对象保留现有拾取。
 
 ## 1. 反馈范围
 
@@ -23,8 +23,8 @@ Hover反馈在命中目标改变时立即发生，不等待Tooltip的0.08秒显�
 
 | 文件（默认assets/scripts/下）                        | 现状                                                      | 本轮处理                               |
 | --------------------------------------------- | ------------------------------------------------------- | ---------------------------------- |
-| ui/hover/HoverInfoController.ts               | 集中pickTarget；没有enter/exit对外通知；hideImmediately直接清hovered | 增加纯视觉回调，并统一所有离开/清空路径               |
-| ui/hover/HoverInfoTypes.ts、HoverInfoTarget.ts | 注册信息只有getInfo等                                          | 可选onHoverChanged(boolean)，注册时透传    |
+| ui/hover/HoverInfoController.ts | 当前统一 pickTarget，退出无视觉通知 | UI 改接原生事件；世界保留拾取；统一 changeHovered 与清理 |
+| ui/hover/HoverInfoTypes.ts、HoverInfoTarget.ts | 注册信息只有 getInfo 等 | 增加回调；UI Target 绑定/解绑原生 enter、leave |
 | building/BuildingRenderer.ts                  | Sprite、Hover、尺寸和缩放同节点                                   | 逻辑Root保持不动，Sprite移入独立视觉子层          |
 | world/WorldObjectRenderer.ts                  | 基地Sprite位于Root                                          | 仅基地拆视觉子层，资源链不变                     |
 | map/MainMapController.ts                      | setBaseSpriteFrame直接getComponent(Sprite)                | 改为设置基地视觉Sprite，防止换图时又在Root创建第二张图   |
@@ -33,7 +33,7 @@ Hover反馈在命中目标改变时立即发生，不等待Tooltip的0.08秒显�
 | feedback/HitFlashView\.ts                     | 每Sprite独立材质实例，自己写flashAmount并销毁                         | 参考生命周期，不复用受击闪白逻辑、不覆盖其材质            |
 | effects/hit-flash.effect                      | 现有Sprite采样/透明混合模板                                       | 新建交互提亮effect，复用已运行的采样结构，不改现有受击效果   |
 
-本轮不顺带重写Scope HitTest或重构地图切换。继续使用仓库当前拾取路径；如果实现中发现命中精度问题，单独定位，而不是给世界对象额外加MOUSE\_ENTER/LEAVE形成两套Hover状态机。
+本轮明确替换 UI Scope 的 Hover 输入来源，适用于已注册的 UI Tooltip 目标，反馈仍按第1节白名单接入。世界 Scope 继续原拾取路径，不增加原生 enter/leave。两类来源共用一个 Hover 身份与 Tooltip，不允许旧 pickTarget 每帧重新选择 UI 并覆盖原生事件结果。
 
 ## 3. 节点结构：视觉动，逻辑不动
 
@@ -129,11 +129,23 @@ A为正弦前系数，不代表实际峰值必达A；衰减会降低峰值。参
 
 桌面规则：hovered && enabled && !suspended时才允许brightnessGain>0；false时**立即写0**，不保留旧稿0.10秒淡出，也不等缩放结束。删除旧版点击额外提亮脉冲，点击只增加缩放pulse，避免鼠标离开后被点击计时器重新点亮。
 
-Hover进入亮度可在0.05～0.08秒内渐入；退出同步归零并清其渐入进度。一次Hover重新进入是新的亮度会话，旧会话不能在晚到回调中写材质；建议直接按状态在update计算，不用异步完成回调。
+Hover 进入直接设置预设微亮值（UI 默认 0.05，建筑 0.06），停留期间一直保持，不设置回落计时器；退出同步归零。初版不做亮度渐入渐出，方便验证事件和保持效果。只有状态/资格改变才写属性，不用异步完成回调。
 
 移动端无Hover，本版在有效touch按住且可交互时轻微提亮，touch end/cancel立即归零；有效点击缩放仍继续播放。禁用、面板打开、失焦、切层同样让提亮立即消失。
 
-## 5. 轻微提亮：独立RGB增益
+## 5. 持续微提亮与 Hit Flash：两种不同效果
+
+| 项目 | Hover 微提亮 | 受击 Hit Flash |
+|---|---|---|
+| 触发 | 鼠标进入且允许反馈 | 受击事件 |
+| 强度 | 原 RGB 约乘 1.05～1.06，保留色相和纹理 | 明显的高亮/闪白，沿用现有受击表现 |
+| 持续 | 鼠标停留多久就保持多久 | 短促脉冲，随后恢复 |
+| 结束 | leave、失焦、遮挡或反馈禁用时立即归零 | 受击效果计时结束 |
+| 参数 | brightnessGain | flashAmount |
+
+不得把 HitFlashView 的闪白计时器用于 Hover，不得每次 enter 播一次很亮再变暗的动画。点击也不触发 Hit Flash。第4节缩放 pulse 的到期与亮度保持完全独立。
+
+### 5.1 独立 RGB 增益实现
 
 新增 `assets/effects/interaction-brightness.effect` 与 `assets/material/interaction-brightness.mtl`，以仓库hit-flash.effect的Sprite渲染模板为基础；保留USE\_TEXTURE、分离Alpha采样、IS\_GRAY、顶点色、Alpha Test和原透明混合配置。材质UUID由Creator生成，不复制旧effect的UUID。
 
@@ -163,35 +175,58 @@ InteractionBrightnessView为明确列出的目标Sprite各持有独立MaterialIn
 
 自定义材质可能增加draw call；本轮为少量可交互对象接受该成本，先测再优化，不为此引入全局图集或批处理重构。
 
-## 6. 接入唯一Hover来源
+## 6. UI 改用 MOUSE_ENTER / MOUSE_LEAVE，保留唯一 Hover 状态
 
-HoverInfoTargetConfig与HoverInfoSource都增加可选：
-onHoverChanged?: (hovered: boolean) => void。
+### 6.1 输入职责与范围
 
-HoverInfoTarget注册时把回调透传；调用反馈组件setHovered(value)。原getInfo与Tooltip位置逻辑保持。
+- HoverInfoTarget：UI Scope 在固定 CardRoot 上用 node.on 注册 Node.EventType.MOUSE_ENTER 和 MOUSE_LEAVE；不用 once（每次进出都需响应）。World Scope 不注册这两个事件。
+- HoverInfoController：接受 UI enter/leave 上报，唯一拥有当前 hovered、UI 候选、门禁与 Tooltip；视觉层不再自行维护第二套命中判定。
+- 原 pickTarget 改为 pickWorldTarget，只遍历 World Scope。lateUpdate 优先保留有效 UI 候选，只有没有 UI 候选且没有 HUD/弹窗遮挡时才拾取世界对象。
+- UI 的正常进出不再依赖全局 input.MOUSE_MOVE 坐标是否更新，也不等待下一帧轮询。原全局监听保留给世界拾取及位置记录。
 
-HoverInfoController内部新增统一changeHovered(next)：
+HoverInfoTargetConfig / HoverInfoSource 增加可选 onHoverChanged?: (hovered: boolean) => void，透传到 feedback.setHovered(value)。Target 新增稳定的 onMouseEnter/onMouseLeave 方法引用，注册一次；onDisable/onDestroy/setup 变更时先退出旧 source 并解绑自己的监听，再按新 config 注册。不能 off 掉 Button 或其他组件的回调；同步更新该文件的职责注释。
 
-1. 相同目标不重复通知。
-2. 对旧目标调用false。
-3. 更新hovered。
-4. 对新目标调用true。
-5. 再执行原Tooltip的beginShow/beginHide流程。
+CardRoot 必须保留 UITransform，命中大小不随动画变化。反馈视觉子节点不再额外注册鼠标监听或 HoverInfoTarget；Button transition 为 NONE，但不移除 Button 和现有点击逻辑。若存在必须响应输入的子节点，需把事件归属统一映射到同一卡片，避免父子目标切换被当作真实重入；初版两类卡片优先保持一个输入根。
 
-必须接入：
+### 6.2 事件上报与幂等转换
 
-- resolveHoveredTarget的A→B、A→空。
-- unregister当前目标。
-- setSuspended(true)。
-- worldHoverEnabled关闭。
-- 当前目标失活/无效。
-- hideImmediately及onDestroy。
+建议控制器入口（命名可按项目风格调整）：
 
-不能先把hovered=null再调用false，否则视觉组件收不到退出。清Tooltip与清原始Hover身份要区分：Tooltip延迟隐藏不应延迟视觉exit；切换A→B时不能让后续旧Tooltip清理把B再误退出。
+    notifyUiEnter(anchor, event)
+    notifyUiLeave(anchor)
+    changeHovered(next)
+    clearHover(reason)
 
-暂挂时发送Hover退出、立即清亮度并停止拾取；对象仍可见时，已有缩放pulse继续自然结束；解除时使用有效的最新指针位置重新拾取。现有setSuspended会清hasPointer，可改为暂挂期间继续采样位置但不拾取，恢复时下一帧重新计算；应用失焦则清指针有效性，避免在未知位置恢复Hover。
+enter：查找已注册且有效的 UI source，记录最新坐标/windowId，登记 UI 候选；门禁允许则立即 changeHovered(source)。同目标重复 enter 不触发新 pulse。
 
-getInfo只返回文本，不承担动画副作用。FeedbackRoot不注册第二个HoverInfoTarget，不用MOUSE\_ENTER/MOUSE\_LEAVE驱动同一反馈。
+leave：清除对应候选；仅当离开的 anchor 仍是当前目标时 changeHovered(null)。若 A 的 leave 晚于 B 的 enter，不能清掉 B。下一次世界拾取必须使用有效位置且通过 HUD 遮挡规则，不能用旧世界坐标立即点亮下方建筑。
+
+changeHovered(next)：
+1. 比较目标身份，相同则返回。
+2. 对旧 source 调用 onHoverChanged(false)，立即清提亮。
+3. 更新 hovered，再对新 source 调用 onHoverChanged(true)，保持微亮并追加一次独立缩放 pulse。
+4. 最后执行 Tooltip beginShow/beginHide；提示框的 0.08 秒显示与 0.03 秒隐藏延迟不影响反馈。
+
+getInfo 保持纯文本读取。Tooltip 到时隐藏只清展示状态，不能清除已切换到 B 的原始 Hover 身份。拆开 hideTooltipImmediately 与 clearHover，删除原有直接 hovered=null 而不通知 false 的路径。
+
+### 6.3 原生事件的边界与恢复
+
+本轮是原生 UI 事件接入试验，不声称原生事件能够解决所有静止指针、遮挡或失焦情形。
+
+- unregister、节点停用/销毁、弹窗开启、切层、应用失焦：显式 clearHover，先 false 再清引用；不能指望 Cocos 一定补发 leave。
+- suspended 时可以记录最新位置，但不产生视觉 enter。关闭面板、UI 布局改变/重建后，用有效最新位置做一次 UI 范围及遮挡校验，必要时恢复 hover；这属于结构变化校正，不恢复每帧 UI 扫描。
+- 全局 input.MOUSE_MOVE 可能被 UI 消费。需要恢复校验时，位置缓存由全局监听和相关 UI 祖先的 MOUSE_MOVE 捕获监听共同更新；捕获回调只记录位置，不派发 Hover、不停止传播、不开放点击穿透。所有输入根都须覆盖并在销毁时解绑。
+- 失焦/离开游戏窗口使位置无效并清亮度。Web 端窗口/画布离开与焦点监听封装在平台适配处，原生端使用对应可用生命周期；无有效位置时不按失焦前坐标恢复，等待新的有效输入。
+- 结构变化校正只能选当前可交互层级最上方的 UI，考虑 Mask、弹窗/HUD 遮挡；相同层级按实际显示顺序决胜，不能靠注册顺序。先统一去重入口，后补此恢复校验，不能让两套路径各发一次动画。
+- 世界门禁关闭只退出 World 目标，不误伤仍可操作的 UI；全局 suspended 则清所有 Hover。
+- UI leave 后即使没有新的 enter，HUD 非目标区域仍应阻挡世界 Hover，不允许鼠标停在面板空白处却提亮下面建筑。
+- 不修改引擎私有 previousMouseIn 等字段。补偿恢复后收到的重复原生 enter 由同目标去重解决。
+
+UI 卡不可支付时仍可显示 Tooltip，原始 Hover 身份保留，反馈资格设为 false；恢复可支付且仍 Hover 时恢复微亮，不伪造新 enter 或补发缩放。已启动的缩放 pulse 不受上述普通退出/门禁变化影响；实际节点停用/销毁才清实例。
+
+### 6.4 最小诊断
+
+开发开关下记录输入来源、时间、anchor、旧/新 Hover、brightnessGain 与清理原因。重点比较原生 enter/leave 与全局 MOUSE_MOVE 是否同时到达。正常日志关闭，禁止每帧刷屏。若仍有漏报，先区分事件未到、门禁过滤、命中层级错误和材质未更新，再决定是否扩大校正范围；不能用持续触发 pulse 掩盖问题。
 
 ## 7. 点击接入：反馈只发生一次
 
@@ -243,7 +278,7 @@ Roster/Card重建前应销毁旧节点及其组件，不能只removeAllChildren�
 | -- | ---------------------------------- | --------------------------- |
 | 1  | Math、Config纯函数与三个预设                | 30/60/120FPS接近，连续点击有界且收敛    |
 | 2  | 新effect/mtl及BrightnessView         | RGB微亮、Alpha不变、不影响共用图集对象     |
-| 3  | HoverTypes/Target/Controller增加视觉回调 | A→B、离开、暂停、销毁都有配对通知          |
+| 3 | UI Target 原生 enter/leave 接入，Controller 分离 UI 与 World 来源 | A→B、离开、暂停、销毁配对；旧轮询不覆盖 UI |
 | 4  | BlueprintCardView接入独立视觉层与原Button点击 | 选中描边、不可支付、Tooltip不回归        |
 | 5  | SquadRosterItemView接入，选中位移拆层       | 不与setSelected争写，头像轻亮、队伍颜色不变 |
 | 6  | BuildingRenderer与基地视觉接入            | 占格、命中、基地产帧切换与业务点击正常         |
@@ -264,6 +299,11 @@ Roster/Card重建前应销毁旧节点及其组件，不能只removeAllChildren�
 - 队伍选中偏移/透明度/颜色不丢，蓝图selected描边/affordable禁用不丢。
 - Disabled蓝图可看Tooltip，但不产生成功点击反馈或提亮。
 - 同图集另一张卡/建筑不跟着亮，半透明边缘和Alpha保持正确。
+- UI 原生 enter 立即微亮并保持至少10秒，无先强闪再回落；leave 当次处理就写0，不等 Tooltip 或缩放结束。
+- 在卡片内部移动不重复触发 pulse；A→B→A 每次真实重入追加独立 pulse；A 晚到 leave 不清 B。
+- Button 消费全局移动事件时 UI enter/leave 仍驱动 Tooltip 与反馈；旧世界轮询不夺取 UI Hover。
+- 鼠标不动时开关弹窗、重建卡栏，校正结果与遮挡一致；失焦、离开窗口、销毁后没有残留亮度。
+- 不足资源蓝图仍显示成本提示，变为可用且仍 Hover 时恢复微亮；HitFlashView 受击强闪与恢复表现不变。
 - 打开面板立即无提亮，仍可见对象的既有pulse自然结束；实际停用/销毁或切层reset后无缩放与提亮残留。
 - 基地换图后只有一张Sprite，位置尺寸正常，仍能三杀后打开面板。
 - 新建/反复切换后材质实例、事件监听数量不无界增长。
@@ -300,3 +340,11 @@ Roster/Card重建前应销毁旧节点及其组件，不能只removeAllChildren�
 | 所有pulse结束 | 精确基准scale，无活动实例 | 若仍Hover可亮；退出必为0 |
 
 调试纯函数检查：记录第一个pulse在单独播放时的sample(t)，加入第二个后其sample(t)必须完全一致；合成前sum等于各sample之和。这样验证的是“旧动画未被修改”，不只是肉眼觉得连续。
+
+### V1.2 输入参考
+
+- [Cocos Creator 3.8 节点事件](https://docs.cocos.com/creator/3.8/manual/zh/engine/event/event-node.html)：MOUSE_ENTER / MOUSE_LEAVE、捕获与冒泡。
+- [Cocos 3.8.8 NodeEventProcessor](https://github.com/cocos/cocos-engine/blob/v3.8.8/cocos/scene-graph/node-event-processor.ts)：原生鼠标命中与进入退出处理。
+- [Cocos 3.8.8 PointerEventDispatcher](https://github.com/cocos/cocos-engine/blob/v3.8.8/cocos/2d/event/pointer-event-dispatcher.ts)：UI 派发与后续全局事件的关系。
+
+本版仅更新实施方案，尚未修改运行时代码或验证 Creator 实机表现。
