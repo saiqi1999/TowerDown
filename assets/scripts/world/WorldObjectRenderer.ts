@@ -35,6 +35,7 @@ import { WorldObjectLifecycleController } from './WorldObjectLifecycleController
 import { HoverInfoTarget } from '../ui/hover/HoverInfoTarget';
 import { HoverPlacement, HoverTargetKind, HoverTargetScope } from '../ui/hover/HoverInfoTypes';
 import { type HoverInfoController } from '../ui/hover/HoverInfoController';
+import { type BaseInteractionController } from '../ui/base/BaseInteractionController';
 
 export class WorldObjectRenderer {
     private readonly frameCache = new Map<WorldVisualId, SpriteFrame>();
@@ -52,6 +53,7 @@ export class WorldObjectRenderer {
         private readonly lifecycle: WorldObjectLifecycleController,
         private readonly resourceHealthBarTexture: Texture2D,
         private readonly hover: HoverInfoController,
+        private readonly baseInteraction: BaseInteractionController | null = null,
     ) {}
 
     public clear(): void {
@@ -161,7 +163,7 @@ export class WorldObjectRenderer {
                     getInfo: () => ({
                         title: 'Base',
                         subtitle: '文明核心',
-                        footer: '基地被摧毁则 Run 失败（未来）',
+                        footer: this.baseInteraction?.getHoverFooter() ?? '基地被摧毁则 Run 失败（未来）',
                     }),
                 });
             }
@@ -180,6 +182,10 @@ export class WorldObjectRenderer {
         node.removeFromParent();
         node.destroy();
         return true;
+    }
+
+    public getNode(objectId: string): Node | null {
+        return this.nodeByObjectId.get(objectId) ?? null;
     }
 
     private validateObjects(objects: readonly WorldObjectData[], mapWidth: number, mapHeight: number): void {

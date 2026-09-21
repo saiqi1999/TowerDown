@@ -48,6 +48,12 @@ export class HoverInfoController extends Component {
         this.worldHoverEnabled = predicate;
     }
 
+    public setSuspended(suspended: boolean): void {
+        if (!suspended) return;
+        this.hideImmediately();
+        this.hasPointer = false;
+    }
+
     public register(source: HoverInfoSource): void {
         this.targets.set(source.anchor, source);
     }

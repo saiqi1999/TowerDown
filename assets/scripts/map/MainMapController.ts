@@ -16,6 +16,7 @@ import {
     Component,
     Material,
     Node,
+    Sprite,
     SpriteFrame,
     Texture2D,
     UITransform,
@@ -74,6 +75,9 @@ import { SquadRosterController } from '../ui/squad/SquadRosterController';
 import { HoverInfoAssetLoader } from '../ui/hover/HoverInfoAssetLoader';
 import { HoverInfoController } from '../ui/hover/HoverInfoController';
 import { HoverInfoPanelView } from '../ui/hover/HoverInfoPanelView';
+import { EnemyKillCounter } from '../combat/EnemyKillCounter';
+import { BaseInteractionController } from '../ui/base/BaseInteractionController';
+import { BasePanelView } from '../ui/base/BasePanelView';
 
 const { ccclass, property } = _decorator;
 
@@ -115,11 +119,18 @@ export class MainMapController extends Component {
     @property(Texture2D)
     public slimeAttackTexture: Texture2D | null = null;
 
+    @property(SpriteFrame)
+    public townCenterIdleFrame: SpriteFrame | null = null;
+
+    @property(SpriteFrame)
+    public townCenterReadyFrame: SpriteFrame | null = null;
+
     private mapRenderer: MapRenderer | null = null;
     private worldObjectRenderer: WorldObjectRenderer | null = null;
     private squadRenderer: SquadRenderer | null = null;
     private combatEventHub: CombatEventHub | null = null;
     private monsterRegistry: MonsterRuntimeRegistry | null = null;
+    private baseInteraction: BaseInteractionController | null = null;
 
     start(): void {
         void this.bootstrap();
@@ -203,6 +214,16 @@ export class MainMapController extends Component {
         const slimeAttackTexture = this.requireInspectorTexture(this.slimeAttackTexture, 'slimeAttackTexture');
         const buildingUiAssets = await new BuildingUiAssetLoader().load();
         const hoverInfoAssets = await new HoverInfoAssetLoader().load();
+        const townCenterIdleFrame = await this.resolveSpriteFrame(
+            this.townCenterIdleFrame,
+            '89b116e7-6b29-4acd-b553-625ac46f5e4a@f9941',
+            'towncenter0',
+        );
+        const townCenterReadyFrame = await this.resolveSpriteFrame(
+            this.townCenterReadyFrame,
+            'a5e06615-45ef-414d-9a35-32431801e4a9@f9941',
+            'towncenter1',
+        );
         const hudRoot = this.getOrCreateCanvasChild('HUDRoot');
         const hudTransform = hudRoot.getComponent(UITransform)
             ?? hudRoot.addComponent(UITransform);
@@ -223,6 +244,26 @@ export class MainMapController extends Component {
         const hoverInfo = hoverLayer.getComponent(HoverInfoController)
             ?? hoverLayer.addComponent(HoverInfoController);
         hoverInfo.setup(hoverPanel, hudTransform);
+        const basePanelRoot = this.getOrCreateChild(hudRoot, 'BasePanelRoot');
+        const basePanelTransform = basePanelRoot.getComponent(UITransform)
+            ?? basePanelRoot.addComponent(UITransform);
+        basePanelTransform.setContentSize(hudTransform.contentSize);
+        basePanelTransform.setAnchorPoint(0.5, 0.5);
+        basePanelRoot.setPosition(0, 0, 0);
+        const defeatedEnemyIds: string[] = [];
+        for (const group of STATIC_MONSTER_GROUPS) {
+            for (const member of group.members) {
+                defeatedEnemyIds.push(member.id);
+            }
+        }
+        const enemyKillCounter = new EnemyKillCounter(defeatedEnemyIds, 3);
+        const baseInteraction = new BaseInteractionController(enemyKillCounter);
+        this.baseInteraction = baseInteraction;
+        const basePanel = new BasePanelView(
+            basePanelRoot,
+            hoverInfoAssets.backgroundFrame,
+            () => baseInteraction.close(),
+        );
         validateBuildingEffectReferences();
         const playerCombatModifiers = new CombatStatModifierRegistry();
         const buildingVisualLibrary = await BuildingVisualLibrary.load();
@@ -284,6 +325,7 @@ export class MainMapController extends Component {
             lifecycle,
             resourceHealthBarTexture,
             hoverInfo,
+            baseInteraction,
         );
         lifecycle.setup(worldObjectRegistry, this.worldObjectRenderer, navigationGrid, worldCellGrid);
         this.worldObjectRenderer.render(
@@ -300,6 +342,7 @@ export class MainMapController extends Component {
             this.combatEventHub,
             damagePopupSpawner,
             hoverInfo,
+            (enemyId) => enemyKillCounter.recordDefeat(enemyId),
         ).render(
             STATIC_MONSTER_GROUPS,
             worldObjectRegistry.getAll(),
@@ -357,6 +400,17 @@ export class MainMapController extends Component {
             targetFlagTexture,
             mapWidth: STATIC_MAP[0]?.length ?? 0,
             mapHeight: STATIC_MAP.length,
+            onBaseClicked: () => baseInteraction.open(),
+        });
+        baseInteraction.setup({
+            idleFrame: townCenterIdleFrame,
+            readyFrame: townCenterReadyFrame,
+            panel: basePanel,
+            setBaseSpriteFrame: (frame) => this.setBaseSpriteFrame(frame),
+            onOpenStateChanged: (open) => {
+                if (open) buildToolController?.cancel();
+                hoverInfo.setSuspended(open);
+            },
         });
         const resourceHudNode = this.getOrCreateChild(hudRoot, 'ResourceHud');
         const resourceHud = resourceHudNode.getComponent(ResourceHudView)
@@ -402,7 +456,8 @@ export class MainMapController extends Component {
             ghost,
         );
         buildToolController.setup(placementTool);
-        commandController.setInputBlockedPredicate(() => buildToolController.isActive());
+        buildToolController.setInputBlockedPredicate(() => baseInteraction.isOpen());
+        commandController.setInputBlockedPredicate(() => buildToolController.isActive() || baseInteraction.isOpen());
         const cardStripNode = this.getOrCreateChild(hudRoot, 'BlueprintCardStrip');
         const cardStrip = new BuildCardStripController(
             cardStripNode,
@@ -425,10 +480,12 @@ export class MainMapController extends Component {
         );
         roster.setup();
         selection.setBeforeUserSelection(() => buildToolController.cancel());
-        const interactionUiNodes = [cardStripNode, rosterNode];
+        selection.setInputBlockedPredicate(() => baseInteraction.isOpen());
+        const interactionUiNodes = [cardStripNode, rosterNode, basePanelRoot];
         buildToolController.setInputExcludedNodes(interactionUiNodes);
-        hoverInfo.setWorldHoverEnabledPredicate(() => !buildToolController.isActive());
+        hoverInfo.setWorldHoverEnabledPredicate(() => !buildToolController.isActive() && !baseInteraction.isOpen());
         hoverLayer.setSiblingIndex(hudRoot.children.length - 1);
+        basePanelRoot.setSiblingIndex(hudRoot.children.length - 1);
         const viewportNode = this.getOrCreateChild(mapRoot, 'WorldViewportController');
         const viewport = viewportNode.getComponent(WorldViewportController)
             ?? viewportNode.addComponent(WorldViewportController);
@@ -444,6 +501,24 @@ export class MainMapController extends Component {
         for (const definitionId of ['storage_house_01', 'lumberjack_house_01', 'barracks_01', 'blacksmith_house_01']) {
             blueprintInventory.unlock(definitionId);
         }
+    }
+
+    protected onDestroy(): void {
+        this.baseInteraction?.destroy();
+        this.baseInteraction = null;
+    }
+
+    private setBaseSpriteFrame(frame: SpriteFrame): void {
+        const node = this.worldObjectRenderer?.getNode('base_main');
+        if (!node) {
+            console.warn('[MainMapController] base_main node missing for base sprite swap.');
+            return;
+        }
+        const transform = node.getComponent(UITransform) ?? node.addComponent(UITransform);
+        transform.setContentSize(64, 64);
+        const sprite = node.getComponent(Sprite) ?? node.addComponent(Sprite);
+        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        sprite.spriteFrame = frame;
     }
 
     private beginGuardCombat(
@@ -537,6 +612,26 @@ export class MainMapController extends Component {
                     return;
                 }
 
+                resolve(asset);
+            });
+        });
+    }
+
+    private async resolveSpriteFrame(
+        existingFrame: SpriteFrame | null,
+        uuid: string,
+        label: string,
+    ): Promise<SpriteFrame> {
+        if (existingFrame) {
+            return existingFrame;
+        }
+
+        return new Promise((resolve, reject) => {
+            assetManager.loadAny<SpriteFrame>(uuid, (error, asset) => {
+                if (error || !asset) {
+                    reject(error ?? new Error(`Failed to load ${label}.`));
+                    return;
+                }
                 resolve(asset);
             });
         });

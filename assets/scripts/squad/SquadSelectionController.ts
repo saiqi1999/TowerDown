@@ -27,6 +27,7 @@ export class SquadSelectionController extends Component {
     private readonly listeners = new Set<SquadSelectionListener>();
     private beforeUserSelection: (() => void) | null = null;
     private handles: ReadonlyMap<string, SquadRuntimeHandle> = new Map();
+    private inputBlockedPredicate: (() => boolean) | null = null;
 
     public setup(
         squads: readonly SquadSpawnData[],
@@ -44,6 +45,10 @@ export class SquadSelectionController extends Component {
 
     public setBeforeUserSelection(callback: (() => void) | null): void {
         this.beforeUserSelection = callback;
+    }
+
+    public setInputBlockedPredicate(predicate: (() => boolean) | null): void {
+        this.inputBlockedPredicate = predicate;
     }
 
     public selectSquad(squadId: string): boolean {
@@ -75,6 +80,7 @@ export class SquadSelectionController extends Component {
     }
 
     private onKeyDown(event: EventKeyboard): void {
+        if (this.inputBlockedPredicate?.()) return;
         const slot = this.keyCodeToSlot(event.keyCode);
         if (slot !== null) this.selectSlot(slot);
     }

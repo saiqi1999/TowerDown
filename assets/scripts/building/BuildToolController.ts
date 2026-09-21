@@ -25,7 +25,9 @@ export class BuildToolController extends Component {
     private readonly stateListeners = new Set<BuildToolStateListener>();
     private inputExcludedNodes: readonly Node[] = [];
     private latestPointerScreenPosition: Vec2 | null = null;
+    private inputBlockedPredicate: (() => boolean) | null = null;
     public setup(tool: BuildingPlacementTool): void { this.tool = tool; }
+    public setInputBlockedPredicate(predicate: (() => boolean) | null): void { this.inputBlockedPredicate = predicate; }
     public setInputExcludedNode(node: Node | null): void { this.inputExcludedNodes = node ? [node] : []; }
     public setInputExcludedNodes(nodes: readonly Node[]): void { this.inputExcludedNodes = nodes; }
     public isActive(): boolean { return this.active; }
@@ -37,6 +39,7 @@ export class BuildToolController extends Component {
         return () => listeners.delete(listener);
     }
     public select(definitionId: string): void {
+        if (this.inputBlockedPredicate?.()) return;
         if (this.active && this.definitionId === definitionId) {
             this.cancel();
             return;
@@ -80,6 +83,7 @@ export class BuildToolController extends Component {
     }
     private onPointerMove(event: Event): void { this.samplePointer(event); }
     private onPointerDown(event: Event): void {
+        if (this.inputBlockedPredicate?.()) return;
         if (!this.active) return;
         if (event instanceof EventMouse && event.getButton() === EventMouse.BUTTON_RIGHT) {
             this.cancel();
@@ -92,6 +96,7 @@ export class BuildToolController extends Component {
         if (this.tool?.confirmCurrentPlacement()) this.cancel();
     }
     private onKeyDown(event: EventKeyboard): void {
+        if (this.inputBlockedPredicate?.()) return;
         if (this.active && event.keyCode === KeyCode.ESCAPE) this.cancel();
     }
     private isPointerOverExcludedUi(event: Event): boolean {

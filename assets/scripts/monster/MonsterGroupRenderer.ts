@@ -32,6 +32,7 @@ export class MonsterGroupRenderer {
         private readonly hub: CombatEventHub,
         private readonly popup: DamagePopupSpawner,
         private readonly hover: HoverInfoController,
+        private readonly onMonsterDefeated?: (enemyId: string) => void,
     ) {}
     public render(groups: readonly MonsterGroupData[], objects: readonly WorldObjectData[], mapWidth: number, mapHeight: number, registry?: MonsterRuntimeRegistry): void {
         this.root.removeAllChildren();
@@ -117,6 +118,7 @@ export class MonsterGroupRenderer {
                     health,
                     stats,
                     hub: this.hub,
+                    onDefeated: this.onMonsterDefeated,
                 });
                 groupController.addMonster(member.id, combat);
             }

@@ -44,10 +44,10 @@ export class HoverInfoPanelView {
         this.background.type = backgroundFrame ? Sprite.Type.SLICED : Sprite.Type.SIMPLE;
         this.background.spriteFrame = backgroundFrame;
         this.background.color = backgroundFrame ? Color.WHITE : new Color(24, 27, 30, 245);
-        this.title = this.makeLabel('Title', HOVER_TITLE_FONT_SIZE, HOVER_TITLE_LINE_HEIGHT, new Color(255, 238, 186), node);
-        this.subtitle = this.makeLabel('Subtitle', HOVER_SUBTITLE_FONT_SIZE, HOVER_SUBTITLE_LINE_HEIGHT, new Color(190, 198, 202), node);
+        this.title = this.makeLabel('Title', HOVER_TITLE_FONT_SIZE, HOVER_TITLE_LINE_HEIGHT, Color.BLACK, node);
+        this.subtitle = this.makeLabel('Subtitle', HOVER_SUBTITLE_FONT_SIZE, HOVER_SUBTITLE_LINE_HEIGHT, Color.BLACK, node);
         this.rowsRoot = this.getChild(node, 'RowsRoot');
-        this.footer = this.makeLabel('Footer', HOVER_FOOTER_FONT_SIZE, HOVER_FOOTER_LINE_HEIGHT, new Color(166, 174, 178), node);
+        this.footer = this.makeLabel('Footer', HOVER_FOOTER_FONT_SIZE, HOVER_FOOTER_LINE_HEIGHT, Color.BLACK, node);
         this.setVisible(false);
     }
 
@@ -79,7 +79,7 @@ export class HoverInfoPanelView {
         }
         for (const row of model.rows ?? []) {
             const text = row.label ? `${row.label}    ${row.value}` : row.value;
-            this.makeLabel(`Row_${this.rowsRoot.children.length}`, HOVER_ROW_FONT_SIZE, HOVER_ROW_LINE_HEIGHT, Color.WHITE, this.rowsRoot).string = text;
+            this.makeLabel(`Row_${this.rowsRoot.children.length}`, HOVER_ROW_FONT_SIZE, HOVER_ROW_LINE_HEIGHT, Color.BLACK, this.rowsRoot).string = text;
         }
         this.footer.string = model.footer ?? '';
         this.footer.node.active = !!model.footer;

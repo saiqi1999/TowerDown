@@ -27,13 +27,16 @@ export class MonsterCombatController extends Component implements CombatUnitRef 
     private motor: MonsterMotor | null = null;
     private hub: CombatEventHub | null = null;
     private unitId = '';
+    private onDefeated: ((enemyId: string) => void) | null = null;
 
     public setup(config: {
         unitId: string; guardWorldPosition: GridPoint; motor: MonsterMotor;
         animator: MonsterAnimator; health: HealthComponent; stats: CombatStats; hub: CombatEventHub;
+        onDefeated?: (enemyId: string) => void;
     }): void {
         this.unitId = config.unitId; this.guardWorldPosition = { ...config.guardWorldPosition };
         this.motor = config.motor; this.animator = config.animator; this.health = config.health; this.stats = config.stats; this.hub = config.hub;
+        this.onDefeated = config.onDefeated ?? null;
         this.impactUnsubscribe?.();
         this.impactUnsubscribe = this.animator.subscribeAttackImpact(() => this.onImpact());
         this.health.subscribe((_current, _max, result) => {
@@ -133,6 +136,7 @@ this.state = MonsterCombatState.Approaching;
     this.group = null;
 
     group?.notifyMonsterDeath(this.id);
+    this.onDefeated?.(this.id);
 
     // 6. 视觉节点稍后移除
     this.scheduleOnce(() => {
@@ -150,5 +154,6 @@ this.state = MonsterCombatState.Approaching;
     onDestroy(): void {
         this.impactUnsubscribe?.();
         this.impactUnsubscribe = null;
+        this.onDefeated = null;
     }
 }

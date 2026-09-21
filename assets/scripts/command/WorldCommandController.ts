@@ -1,6 +1,6 @@
 import { _decorator, Component, Node, type SpriteFrame, Texture2D } from 'cc';
 import { getWorldVisualDefinition } from '../world/WorldAtlasConfig';
-import { type WorldObjectData } from '../world/WorldObjectTypes';
+import { WorldObjectKind, type WorldObjectData } from '../world/WorldObjectTypes';
 import { WorldObjectView } from '../world/WorldObjectView';
 import { createTargetFlagFrames } from './TargetFlagSpriteConfig';
 import { TargetFlagView } from './TargetFlagView';
@@ -21,6 +21,7 @@ export interface WorldCommandControllerConfig {
     targetFlagTexture: Texture2D;
     mapWidth: number;
     mapHeight: number;
+    onBaseClicked?: () => void;
 }
 
 @ccclass('WorldCommandController')
@@ -37,6 +38,7 @@ export class WorldCommandController extends Component {
     private readonly targetBySquad = new Map<string, string>();
     private readonly flagBySquad = new Map<string, TargetFlagView>();
     private inputBlockedPredicate: (() => boolean) | null = null;
+    private onBaseClicked: (() => void) | null = null;
 
     public setInputBlockedPredicate(predicate: (() => boolean) | null): void {
         this.inputBlockedPredicate = predicate;
@@ -52,6 +54,7 @@ export class WorldCommandController extends Component {
         this.selection = config.selection;
         this.squadPresentationById = config.squadPresentationById;
         this.flagFrames = createTargetFlagFrames(config.targetFlagTexture);
+        this.onBaseClicked = config.onBaseClicked ?? null;
 
         const views = config.worldObjectRoot.getComponentsInChildren(WorldObjectView);
         for (const view of views) {
@@ -75,6 +78,11 @@ export class WorldCommandController extends Component {
 
     private onWorldObjectClicked(objectId: string): void {
         if (this.inputBlockedPredicate?.()) {
+            return;
+        }
+        const target = this.worldObjectRegistry?.get(objectId) ?? null;
+        if (target?.kind === WorldObjectKind.Base) {
+            this.onBaseClicked?.();
             return;
         }
         const activeSquadId = this.selection?.getSelectedSquadId() ?? null;
@@ -102,7 +110,6 @@ export class WorldCommandController extends Component {
             return;
         }
 
-        const target = this.worldObjectRegistry?.get(objectId) ?? null;
         if (!target) {
             console.warn(`[WorldCommandController] target missing after command accepted: ${objectId}`);
             return;
