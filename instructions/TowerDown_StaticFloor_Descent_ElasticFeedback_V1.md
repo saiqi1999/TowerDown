@@ -6,11 +6,11 @@
 
 ## 1. 最小行为
 
-| 状态 | 基地 | 点击结果 |
-|---|---|---|
-| 杀敌0～2名 | towncenter0 | 不打开面板，不向部队发回城命令 |
-| 杀敌达到3名 | towncenter1 | 可打开主屏幕面板；无需选中队伍 |
-| 面板已打开 | 保持towncenter1 | 重复点击不创建第二个面板 |
+| 状态     | 基地            | 点击结果               |
+| ------ | ------------- | ------------------ |
+| 杀敌0～2名 | towncenter0   | 不打开面板，不向部队发回城命令    |
+| 杀敌达到3名 | towncenter1   | 可打开主屏幕面板；无需选中队伍    |
+| 面板已打开  | 保持towncenter1 | 重复点击不创建第二个面板       |
 | 点击“返回” | 保持towncenter1 | 关闭面板回到当前游戏画面，可再次打开 |
 
 计数按敌人成员，不按怪物组。第三个敌人死亡只使基地就绪，不自动打开面板。达到条件后不消耗计数，不要求清空地图。
@@ -25,13 +25,13 @@
 
 建议接口：
 
-- constructor(validEnemyIds: readonly string[], requiredKills = 3)
+- constructor(validEnemyIds: readonly string\[], requiredKills = 3)
 - recordDefeat(enemyId: string): boolean：首次有效记录返回true，未知或重复ID返回false。
 - getCount(): number
 - isReady(): boolean
 - subscribe(listener): () => void：立即通知当前快照，并返回取消订阅函数。
 
-内部使用已知敌人ID集合和已击败ID集合。validEnemyIds由STATIC_MONSTER_GROUPS的members展平产生；不要用worldObjectRegistry中的资源ID。真实计数可超过3，UI进度显示min(count,3)/3。就绪状态从false变true只发生一次。
+内部使用已知敌人ID集合和已击败ID集合。validEnemyIds由STATIC\_MONSTER\_GROUPS的members展平产生；不要用worldObjectRegistry中的资源ID。真实计数可超过3，UI进度显示min(count,3)/3。就绪状态从false变true只发生一次。
 
 ### 死亡接入点
 
@@ -51,18 +51,18 @@
 
 ### 素材
 
-| 状态 | 图片 | SpriteFrame UUID |
-|---|---|---|
-| 未就绪 | assets/art/buildings/towncenter0.png | 89b116e7-6b29-4acd-b553-625ac46f5e4a@f9941 |
-| 就绪 | assets/art/buildings/towncenter1.png | a5e06615-45ef-414d-9a35-32431801e4a9@f9941 |
+| 状态  | 图片                                   | SpriteFrame UUID                            |
+| --- | ------------------------------------ | ------------------------------------------- |
+| 未就绪 | assets/art/buildings/towncenter0.png | 89b116e7-6b29-4acd-b553-625ac46f5e4a\@f9941 |
+| 就绪  | assets/art/buildings/towncenter1.png | a5e06615-45ef-414d-9a35-32431801e4a9\@f9941 |
 
-两张图原始尺寸128×128，裁切尺寸不同。固定显示尺寸及对齐基准，换图不修改base_main的ID、gridX/gridY、4×3占格和导航。用固定原始画布显示，不能按两帧裁切宽高各自调整命中框。
+两张图原始尺寸128×128，裁切尺寸不同。固定显示尺寸及对齐基准，换图不修改base\_main的ID、gridX/gridY、4×3占格改为4\*4占格，导航同步修改。用固定原始画布显示，不能按两帧裁切宽高各自调整命中框。
 
 新增 `assets/scripts/ui/base/BaseInteractionController.ts`，负责订阅计数、切换基地SpriteFrame、打开/关闭面板；不处理怪物伤害。
 
 MainMapController可通过两个Inspector SpriteFrame字段加载，未配置时按上表UUID预加载。两张图及Hover背景准备完成后再启用基地面板入口；资源加载失败要报明确错误，不创建无法返回的空白遮罩。
 
-`WorldObjectRenderer.ts`增加getView(objectId)或getNode(objectId)只读访问，用于找到base_main。只对基地Sprite增加固定视觉子节点/对齐处理（如需要），不重构全部建筑渲染。现有Base根缩放为GRID_RENDER_SCALE=2，必须计入最终显示尺寸，不能把128px画布又无意放大一倍。建议视觉最终宽约96px，保持底部对齐；实际按素材校准。
+`WorldObjectRenderer.ts`增加getView(objectId)或getNode(objectId)只读访问，用于找到base\_main。只对基地Sprite增加固定视觉子节点/对齐处理（如需要），不重构全部建筑渲染。现有Base根缩放为GRID\_RENDER\_SCALE=2，必须计入最终显示尺寸，不能把128px画布又无意放大一倍。建议视觉最终宽约128px，保持底部对齐；实际按素材校准。
 
 ### 接入现有点击链
 
@@ -74,9 +74,9 @@ WorldCommandController的setup配置增加onBaseClicked回调，在onWorldObject
 2. 查询objectId对应对象；若kind为Base，调用onBaseClicked并return。
 3. 其他对象继续原有选中队伍检查和派兵流程。
 
-**基地分流必须发生在“是否选中队伍”的判断之前。**未就绪点击不派回城、不打开页面；就绪点击打开一次。不要再给同一个WorldObjectView绑定第二条点击监听，避免覆盖或重复触发。
+\*\*基地分流必须发生在“是否选中队伍”的判断之前。\*\*未就绪点击不派回城、不打开页面；就绪点击打开一次。不要再给同一个WorldObjectView绑定第二条点击监听，避免覆盖或重复触发。
 
-若现有TOUCH_END会把拖图释放误当点击，仅在WorldObjectView增加按下/抬起位置与单指判断：移动超过8屏幕像素、取消触摸或多指手势不算点击；沿用一个点击事件入口，不同时监听鼠标释放再派发一次。这是防误触的小补丁，不引入新的拾取系统。
+若现有TOUCH\_END会把拖图释放误当点击，仅在WorldObjectView增加按下/抬起位置与单指判断：移动超过8屏幕像素、取消触摸或多指手势不算点击；沿用一个点击事件入口，不同时监听鼠标释放再派发一次。这是防误触的小补丁，不引入新的拾取系统。
 
 基地原Hover内容可增加“击败敌人 X/3”；就绪后显示“点击打开”。不添加独立杀敌HUD，计数通过基地Hover即可观察。
 
@@ -100,7 +100,7 @@ WorldCommandController的setup配置增加onBaseClicked回调，在onWorldObject
 
 Root覆盖整个HUD，可拦截全屏输入。框体四边留16个UI单位边距；1280×720参考视口下框体为1248×688，尺寸变化时重新计算。背景采用九宫格扩展，不把整张小图等比例拉伸。
 
-面板左上角内边距24px放“返回”链接：字体18px、颜色沿用Hover标题的浅金色(255,238,186)，文字可加下划线体现链接感。点击区至少80×44px，文本仍是普通链接外观，不加按钮底板。使用独立Label和点击区域即可，不需要网页链接或RichText事件解析。
+面板正中间下方内边距24px放“返回”链接：字体18px、颜色用的浅蓝，文字可加下划线体现链接感。点击区至少80×44px，文本仍是普通链接外观，不加按钮底板。使用独立Label和点击区域即可，不需要网页链接或RichText事件解析。
 
 点击返回只执行close：隐藏Root，恢复普通HUD输入和Hover。保持地图、已建建筑、队伍、库存、杀敌计数与基地就绪状态。返回不是重启场景或回主菜单。
 
@@ -123,37 +123,37 @@ Root覆盖整个HUD，可拦截全屏输入。框体四边留16个UI单位边距
 
 ## 6. 文件修改清单与施工顺序
 
-| 顺序 | 新增/修改文件 | 工作 |
-|---|---|---|
-| 1 | 新增combat/EnemyKillCounter.ts | 唯一ID计数、3杀阈值、订阅 |
-| 2 | 修改monster/MonsterCombatController.ts、MonsterGroupRenderer.ts | 真实死亡边沿回调并注入计数器 |
-| 3 | 新增ui/base/BasePanelView.ts | 九宫格主屏幕框、唯一返回链接 |
-| 4 | 新增ui/base/BaseInteractionController.ts | 计数订阅、基地两帧切换、面板状态 |
-| 5 | 修改world/WorldObjectRenderer.ts、command/WorldCommandController.ts | 暴露基地节点，点击优先分流 |
-| 6 | 修改map/MainMapController.ts | 创建依赖、加载素材、注入回调和面板 |
-| 7 | 修改Hover及有全局输入的少量控制器 | 面板遮挡、快捷键阻断、关闭后恢复 |
-| 8 | 需要时修改WorldObjectView.ts | 拖动/取消手势不触发点击 |
+| 顺序 | 新增/修改文件                                                          | 工作                |
+| -- | ---------------------------------------------------------------- | ----------------- |
+| 1  | 新增combat/EnemyKillCounter.ts                                     | 唯一ID计数、3杀阈值、订阅    |
+| 2  | 修改monster/MonsterCombatController.ts、MonsterGroupRenderer.ts     | 真实死亡边沿回调并注入计数器    |
+| 3  | 新增ui/base/BasePanelView\.ts                                      | 九宫格主屏幕框、唯一返回链接    |
+| 4  | 新增ui/base/BaseInteractionController.ts                           | 计数订阅、基地两帧切换、面板状态  |
+| 5  | 修改world/WorldObjectRenderer.ts、command/WorldCommandController.ts | 暴露基地节点，点击优先分流     |
+| 6  | 修改map/MainMapController.ts                                       | 创建依赖、加载素材、注入回调和面板 |
+| 7  | 修改Hover及有全局输入的少量控制器                                              | 面板遮挡、快捷键阻断、关闭后恢复  |
+| 8  | 需要时修改WorldObjectView\.ts                                         | 拖动/取消手势不触发点击      |
 
-不新建FloorTransitionController、StaticFloorCatalog、SimulationGate或ElasticFeedback文件。不修改STATIC_MAP、STATIC_WORLD_OBJECTS、STATIC_SQUADS及资源经济配置。
+不新建FloorTransitionController、StaticFloorCatalog、SimulationGate或ElasticFeedback文件。不修改STATIC\_MAP、STATIC\_WORLD\_OBJECTS、STATIC\_SQUADS及资源经济配置。
 
 所有新.ts按根AGENTS.md添加文件级说明：Why this file exists / Ownership boundary / This file deliberately does NOT；生成并提交各自.meta，不复制旧UUID。
 
 ## 7. 验收
 
-| 操作 | 预期 |
-|---|---|
-| 击败0、1、2个敌人 | Hover进度对应；基地未就绪，点击无业务动作 |
-| 击败第3个敌人 | 基地换towncenter1一次，不自动弹窗 |
-| 同一敌人重复命中/节点销毁 | 不重复计数 |
-| 采空资源或销毁未死亡的怪物节点 | 不算击杀 |
-| 无选中小队时点击就绪基地 | 大面板正常打开 |
-| 查看面板 | Hover同款框占主屏幕，内部仅“返回”链接 |
-| 面板上点击/拖动/滚轮/按选队建造快捷键 | 不操作背后的世界；后台模拟继续 |
-| 点击空白 | 面板保持打开 |
-| 点击返回 | 关闭面板，不回主菜单、不清库存或计数；无点击穿透 |
-| 返回后再次点击基地 | 可再次打开；不重计杀敌、不重复创建节点 |
-| 快速连点/连续开关20次 | 仅一个面板、一个计数订阅，无输入锁残留 |
-| 窗口缩放/不同HUD尺寸 | 面板边距与返回点击区正常，九宫格边框不拉花 |
-| 地图拖动从基地上起手 | 不误打开面板 |
+| 操作                   | 预期                       |
+| -------------------- | ------------------------ |
+| 击败0、1、2个敌人           | Hover进度对应；基地未就绪，点击无业务动作  |
+| 击败第3个敌人              | 基地换towncenter1一次，不自动弹窗   |
+| 同一敌人重复命中/节点销毁        | 不重复计数                    |
+| 采空资源或销毁未死亡的怪物节点      | 不算击杀                     |
+| 无选中小队时点击就绪基地         | 大面板正常打开                  |
+| 查看面板                 | Hover同款框占主屏幕，内部仅“返回”链接   |
+| 面板上点击/拖动/滚轮/按选队建造快捷键 | 不操作背后的世界；后台模拟继续          |
+| 点击空白                 | 面板保持打开                   |
+| 点击返回                 | 关闭面板，不回主菜单、不清库存或计数；无点击穿透 |
+| 返回后再次点击基地            | 可再次打开；不重计杀敌、不重复创建节点      |
+| 快速连点/连续开关20次         | 仅一个面板、一个计数订阅，无输入锁残留      |
+| 窗口缩放/不同HUD尺寸         | 面板边距与返回点击区正常，九宫格边框不拉花    |
+| 地图拖动从基地上起手           | 不误打开面板                   |
 
 自动验证只需覆盖计数器的有效ID、去重和阈值；换图、九宫格、触摸和输入遮挡使用Creator预览验收。本次是方案更新，不宣称上述功能已实现或测试通过。
