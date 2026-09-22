@@ -24,5 +24,5 @@ export interface WarriorSlotAssignment {
     motor: WarriorMotor;
     animator: WarriorAnimator;
     slot: InteractionSlot;
-    state: 'moving' | 'attacking' | 'waiting';
+    state: 'moving' | 'attacking' | 'waiting' | 'cancelled';
 }

@@ -34,10 +34,10 @@ import { InteractionSlotResolver } from './InteractionSlotResolver';
 import { SquadEngagementController } from './SquadEngagementController';
 import { SquadMotor } from './SquadMotor';
 import {
-    SQUAD_FORMATION_OFFSETS,
     type SquadRuntimeHandle,
     type SquadSpawnData,
 } from './SquadTypes';
+import { assignFormation } from './SquadFormationLayout';
 import { WarriorAnimator } from './WarriorAnimator';
 import { type MonsterRuntimeRegistry } from '../monster/MonsterRuntimeRegistry';
 import { WarriorCombatController } from './WarriorCombatController';
@@ -163,10 +163,11 @@ export class SquadRenderer {
             handle.warriorCombatControllers.push(parts.combat);
             handle.motor.addWarrior(parts.animator);
             handle.combat.addWarrior(parts.combat);
-            handle.engagement.addWarrior(parts.motor, parts.animator, parts.stats);
+            handle.engagement.addWarrior(parts.motor, parts.animator, parts.stats, parts.health);
             handle.brain.addWarrior(parts.animator);
             added += 1;
         }
+        this.reflowFormation(handle, false);
         return added;
     }
 
@@ -234,6 +235,11 @@ export class SquadRenderer {
                 hub: this.combatEventHub,
             });
         }
+        const initialHandleMembers = warriorCombatControllers.map((_, index) => `${squad.id}/warrior_${index}`);
+        const initialOffsets = assignFormation(initialHandleMembers);
+        for (let index = 0; index < warriorMotors.length; index += 1) {
+            warriorMotors[index]!.setFormationOffset(initialOffsets.get(initialHandleMembers[index]!)!, { snap: true });
+        }
 
         const combat = squadNode.addComponent(SquadCombatController);
         combat.setup(squad.id, motor, warriorCombatControllers);
@@ -244,6 +250,7 @@ export class SquadRenderer {
             warriorMotors,
             warriorAnimators: warriors,
             warriorCombatStats,
+            warriorHealth,
             slotResolver: new InteractionSlotResolver(this.navigationGrid),
             combatEventHub: this.combatEventHub,
         });
@@ -357,12 +364,16 @@ export class SquadRenderer {
     }
 
     private getFormationOffset(index: number): { x: number; y: number } {
-        const base = SQUAD_FORMATION_OFFSETS[index % SQUAD_FORMATION_OFFSETS.length]!;
-        const row = Math.floor(index / SQUAD_FORMATION_OFFSETS.length);
-        return {
-            x: base.x,
-            y: base.y + row * 0.65,
-        };
+        return assignFormation([String(index)]).get(String(index))!;
+    }
+
+    private reflowFormation(handle: SquadRuntimeHandle, snap: boolean): void {
+        const memberIds = handle.warriorMotors.map((_, index) => `${handle.id}/warrior_${index}`);
+        const offsets = assignFormation(memberIds);
+        for (let index = 0; index < handle.warriorMotors.length; index += 1) {
+            const offset = offsets.get(memberIds[index]!);
+            if (offset) handle.warriorMotors[index]!.setFormationOffset(offset, { snap });
+        }
     }
 
     private getHomeObject(homeObjectId: string): WorldObjectData {

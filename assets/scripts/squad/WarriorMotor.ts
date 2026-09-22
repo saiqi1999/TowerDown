@@ -7,7 +7,7 @@ import { WarriorDirection } from './WarriorSpriteConfig';
 
 const { ccclass } = _decorator;
 
-const LOCAL_MOVE_SPEED_CELLS_PER_SECOND = 2.0;
+const LOCAL_MOVE_SPEED_CELLS_PER_SECOND = 8.0;
 const LOCAL_ARRIVE_EPSILON = 0.03;
 
 export interface WarriorMotorConfig {
@@ -84,6 +84,20 @@ export class WarriorMotor extends Component {
     public returnToFormation(): void {
         // 阵型恢复始终复用同一套局部移动逻辑，避免 cancel 分支出现另一种位移语义。
         this.moveToLocalGridOffset(this.formationOffset);
+    }
+
+    public setFormationOffset(offset: GridPoint, options: { snap?: boolean } = {}): void {
+        this.formationOffset = { ...offset };
+        if (options.snap) {
+            this.currentLocalGridOffset = { ...offset };
+            this.targetLocalGridOffset = { ...offset };
+            this.moving = false;
+            this.arrivedPending = false;
+            this.syncNodePosition();
+            this.animator?.playIdle(this.lastDirection);
+            return;
+        }
+        if (!this.moving) this.returnToFormation();
     }
 
     public stop(): void {

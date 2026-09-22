@@ -8,6 +8,7 @@ import { type MonsterGroupController } from '../monster/MonsterGroupController';
 import { SquadMotor } from './SquadMotor';
 import { WarriorAnimator } from './WarriorAnimator';
 import { WarriorMotor } from './WarriorMotor';
+import { HealthBarView } from '../feedback/HealthBarView';
 
 const { ccclass } = _decorator;
 export enum WarriorCombatState { Inactive = 0, AcquiringTarget = 1, Approaching = 2, Attacking = 3, Dead = 4 }
@@ -19,6 +20,7 @@ export class WarriorCombatController extends Component implements CombatUnitRef 
     private target: CombatUnitRef | null = null;
     private state = WarriorCombatState.Inactive;
     private impactUnsubscribe: (() => void) | null = null;
+    private healthUnsubscribe: (() => void) | null = null;
     private health!: HealthComponent;
     private stats!: CombatStats;
     private motor!: WarriorMotor;
@@ -33,7 +35,10 @@ export class WarriorCombatController extends Component implements CombatUnitRef 
         this.attackCooldown = 0;
         this.impactUnsubscribe?.();
         this.impactUnsubscribe = this.animator.subscribeAttackImpact(() => this.onImpact());
-        this.health.subscribe((_current, _max, result) => { if (result?.becameDepleted) this.die(); });
+        this.healthUnsubscribe?.();
+        this.healthUnsubscribe = this.health.subscribe((_current, _max, result) => {
+            if (result?.becameDepleted) this.die();
+        });
     }
     public get id(): string { return this.unitId; }
     public isAlive(): boolean { return !this.health.isDepleted(); }
@@ -44,7 +49,9 @@ export class WarriorCombatController extends Component implements CombatUnitRef 
         this.releaseTarget();
         this.group = null;
         this.motor.stop();
+        this.node.active = true;
         this.health.restoreFullForFloor();
+        this.node.getComponent(HealthBarView)?.setVisible(true);
         this.animator.resetToIdleForFloor();
         this.attackCooldown = 0;
         this.state = WarriorCombatState.Inactive;
@@ -152,14 +159,28 @@ export class WarriorCombatController extends Component implements CombatUnitRef 
     void dt;
 }
     private releaseTarget(): void { if (this.target && this.group) this.group.releaseWarriorTarget(this.id, this.target.id); this.target = null; }
-    private die(): void { this.releaseTarget(); this.motor.stop(); this.animator.playIdle(); this.attackCooldown = 0; this.state = WarriorCombatState.Dead; }
+    private die(): void {
+        if (this.state === WarriorCombatState.Dead) return;
+        this.state = WarriorCombatState.Dead;
+        this.releaseTarget();
+        this.motor.stop();
+        this.animator.playIdle();
+        this.attackCooldown = 0;
+        this.node.active = false;
+        this.node.getComponent(HealthBarView)?.setVisible(false);
+    }
     private onImpact(): void {
-        if (this.state !== WarriorCombatState.Attacking || !this.target) return;
+        if (!this.isAlive() || this.state !== WarriorCombatState.Attacking || !this.target || !this.target.isAlive()) return;
         if (this.attackCooldown > 0) return;
         if (distance(this.getWorldGridPosition(), this.target.getWorldGridPosition()) <= this.stats.getAttackRangeCells() + 0.08) {
             this.hub.emitAttackImpact({ attackerId: this.id, targetId: this.target.id, damage: this.stats.getAttackDamage() });
             this.attackCooldown = this.stats.getAttackIntervalSeconds();
         }
     }
-    onDestroy(): void { this.impactUnsubscribe?.(); }
+    onDestroy(): void {
+        this.impactUnsubscribe?.();
+        this.healthUnsubscribe?.();
+        this.impactUnsubscribe = null;
+        this.healthUnsubscribe = null;
+    }
 }

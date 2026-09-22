@@ -20,7 +20,7 @@ export class SquadMotor extends Component {
     private currentGridPoint: GridPoint = { x: 0, y: 0 };
     private waypoints: GridPoint[] = [];
     private waypointIndex = 0;
-    private moveSpeedCellsPerSecond = 2;
+    private moveSpeedCellsPerSecond = 8;
     private mapWidth = 0;
     private mapHeight = 0;
     private warriors: WarriorAnimator[] = [];
@@ -36,7 +36,7 @@ export class SquadMotor extends Component {
         this.mapWidth = config.mapWidth;
         this.mapHeight = config.mapHeight;
         this.warriors = config.warriors;
-        this.moveSpeedCellsPerSecond = config.moveSpeedCellsPerSecond ?? 2;
+        this.moveSpeedCellsPerSecond = config.moveSpeedCellsPerSecond ?? 8;
         this.waypoints = [];
         this.waypointIndex = 0;
         this.arrivedPending = false;
@@ -124,32 +124,35 @@ export class SquadMotor extends Component {
         if (!this.initialized || !this.isMoving()) {
             return;
         }
+        let remainingStep = Math.max(0, this.moveSpeedCellsPerSecond * dt);
+        let guard = this.waypoints.length;
+        while (this.isMoving() && remainingStep > 0 && guard > 0) {
+            guard -= 1;
+            const target = this.waypoints[this.waypointIndex];
+            if (!target) break;
+            const dx = target.x - this.currentGridPoint.x;
+            const dy = target.y - this.currentGridPoint.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance <= 0.03) {
+                this.snapToWaypoint(target);
+                continue;
+            }
 
-        const target = this.waypoints[this.waypointIndex];
-        const dx = target.x - this.currentGridPoint.x;
-        const dy = target.y - this.currentGridPoint.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance <= 0.03) {
-            this.snapToWaypoint(target);
-            return;
+            const direction = resolveWarriorDirection(dx, dy, this.lastDirection);
+            this.lastDirection = direction;
+            this.playWalk(direction);
+            if (distance <= remainingStep) {
+                remainingStep -= distance;
+                this.snapToWaypoint(target);
+                continue;
+            }
+            this.currentGridPoint = {
+                x: this.currentGridPoint.x + (dx / distance) * remainingStep,
+                y: this.currentGridPoint.y + (dy / distance) * remainingStep,
+            };
+            this.syncWorldPosition();
+            remainingStep = 0;
         }
-
-        const direction = resolveWarriorDirection(dx, dy, this.lastDirection);
-        this.lastDirection = direction;
-        this.playWalk(direction);
-
-        const maxStep = this.moveSpeedCellsPerSecond * dt;
-        if (distance <= maxStep) {
-            this.snapToWaypoint(target);
-            return;
-        }
-
-        this.currentGridPoint = {
-            x: this.currentGridPoint.x + (dx / distance) * maxStep,
-            y: this.currentGridPoint.y + (dy / distance) * maxStep,
-        };
-        this.syncWorldPosition();
     }
 
     private snapToWaypoint(target: GridPoint): void {

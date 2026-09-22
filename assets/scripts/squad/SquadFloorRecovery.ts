@@ -24,11 +24,8 @@ export class SquadFloorRecovery {
             if (handle.warriorHealth.length !== handle.warriorCombatControllers.length) {
                 throw new Error(`[SquadFloorRecovery] incomplete member arrays for ${id}`);
             }
-            handle.combat.resetForFloor();
-            handle.engagement.resetForFloor();
-            handle.motor.teleportForFloor(point);
-            for (const warrior of handle.warriorCombatControllers) warrior.resetForFloor();
             handle.brain.resetForFloor(homeCell);
+            handle.motor.teleportForFloor(point);
         }
     }
 }

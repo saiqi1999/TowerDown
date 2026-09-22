@@ -73,6 +73,7 @@ export class WarriorAnimator extends Component {
     }
 
     public playIdle(direction?: WarriorDirection): void {
+        if (!this.node.activeInHierarchy) return;
         // 离开 Attack 时必须重置 attackPoseVisible，否则下一次重新进入 Attack 时会丢掉首个命中边沿。
         if (direction !== undefined) {
             this.direction = direction;
@@ -92,6 +93,7 @@ export class WarriorAnimator extends Component {
     }
 
     public playWalk(direction: WarriorDirection): void {
+        if (!this.node.activeInHierarchy) return;
         // Walk 和 Idle 一样都要清掉 Attack 边沿状态，避免“移动中仍保留上一拍命中可见”这种脏状态。
         const directionChanged = this.direction !== direction;
         this.direction = direction;
@@ -120,6 +122,7 @@ export class WarriorAnimator extends Component {
 
     // Attack 图的 4 列代表方向而不是时间，因此攻击动画要在“站姿帧”和“方向 Pose”之间切换。
     public playAttack(direction: WarriorDirection): void {
+        if (!this.node.activeInHierarchy) return;
         const directionChanged = this.direction !== direction;
         this.direction = direction;
 

@@ -63,6 +63,10 @@ export class HealthBarView extends Component {
         });
     }
 
+    public setVisible(visible: boolean): void {
+        if (this.barRoot?.isValid) this.barRoot.active = visible;
+    }
+
     onDestroy(): void {
         this.unsubscribe?.();
         this.unsubscribe = null;

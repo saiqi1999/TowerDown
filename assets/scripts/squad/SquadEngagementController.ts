@@ -1,6 +1,7 @@
 import { _decorator, Component } from 'cc';
 import { CombatEventHub } from '../combat/CombatEventHub';
 import { CombatStats } from '../combat/CombatStats';
+import { HealthComponent } from '../combat/HealthComponent';
 import { type GridPoint } from '../navigation/NavigationTypes';
 import { getWorldVisualDefinition } from '../world/WorldAtlasConfig';
 import { type WorldObjectData } from '../world/WorldObjectTypes';
@@ -31,6 +32,7 @@ export interface SquadEngagementConfig {
     warriorMotors: WarriorMotor[];
     warriorAnimators: WarriorAnimator[];
     warriorCombatStats: CombatStats[];
+    warriorHealth: HealthComponent[];
     slotResolver: InteractionSlotResolver;
     combatEventHub: CombatEventHub;
 }
@@ -49,6 +51,7 @@ export class SquadEngagementController extends Component {
     private warriorMotors: WarriorMotor[] = [];
     private warriorAnimators: WarriorAnimator[] = [];
     private warriorCombatStats: CombatStats[] = [];
+    private warriorHealth: HealthComponent[] = [];
     private slotResolver: InteractionSlotResolver | null = null;
     private combatEventHub: CombatEventHub | null = null;
     private currentTarget: WorldObjectData | null = null;
@@ -66,6 +69,7 @@ export class SquadEngagementController extends Component {
         this.warriorMotors = [...config.warriorMotors];
         this.warriorAnimators = [...config.warriorAnimators];
         this.warriorCombatStats = [...config.warriorCombatStats];
+        this.warriorHealth = [...config.warriorHealth];
         this.slotResolver = config.slotResolver;
         this.combatEventHub = config.combatEventHub;
         this.currentTarget = null;
@@ -87,11 +91,13 @@ export class SquadEngagementController extends Component {
         motor: WarriorMotor,
         animator: WarriorAnimator,
         stats: CombatStats,
+        health: HealthComponent,
     ): void {
         const index = this.warriorMotors.length;
         this.warriorMotors.push(motor);
         this.warriorAnimators.push(animator);
         this.warriorCombatStats.push(stats);
+        this.warriorHealth.push(health);
         this.impactUnsubscribers.push(animator.subscribeAttackImpact(() => {
             this.onWarriorAttackImpact(index);
         }));
@@ -227,6 +233,11 @@ export class SquadEngagementController extends Component {
     private updateAssignments(): void {
         // 到位即进入 attacking，而不是等全队到齐，是为了保证“谁先贴边谁先打”的交互节奏。
         for (const assignment of this.assignments) {
+            if (this.warriorHealth[assignment.warriorIndex]?.isDepleted()) {
+                assignment.state = 'cancelled';
+                assignment.motor.stop();
+                continue;
+            }
             if (assignment.state !== 'moving') {
                 continue;
             }
@@ -243,8 +254,12 @@ export class SquadEngagementController extends Component {
             );
         }
 
-        if (this.anyWarriorEngaged) {
+        this.assignments = this.assignments.filter((assignment) => assignment.state !== 'cancelled');
+        if (this.anyWarriorEngaged && this.assignments.length > 0) {
             this.state = SquadEngagementState.Engaged;
+        } else if (this.assignments.length === 0) {
+            this.currentTarget = null;
+            this.state = SquadEngagementState.Inactive;
         }
     }
 
@@ -252,7 +267,7 @@ export class SquadEngagementController extends Component {
         warriorIndex: number,
     ): void {
         // callback 到这里才补齐 attackerId / targetId，因为这些信息属于交战上下文，不属于动画组件本身。
-        if (!this.currentTarget || !this.combatEventHub) {
+        if (!this.currentTarget || !this.combatEventHub || this.warriorHealth[warriorIndex]?.isDepleted()) {
             return;
         }
 
@@ -263,9 +278,12 @@ export class SquadEngagementController extends Component {
             return;
         }
 
+        const target = this.currentTarget;
+        if (!target) return;
+
         const result = this.combatEventHub.emitAttackImpact({
             attackerId: `${this.squadId}/warrior_${warriorIndex}`,
-            targetId: this.currentTarget.id,
+            targetId: target.id,
             damage: this.warriorCombatStats[warriorIndex]?.getAttackDamage() ?? 0,
         });
         if (result?.targetDepleted) {
@@ -276,7 +294,9 @@ export class SquadEngagementController extends Component {
 
     private tryCompleteReform(): void {
         // Reform 完成条件看“是否回到阵型点”而不是单纯依赖 arrived 事件，避免重复 returnToFormation 时漏判完成。
-        for (const motor of this.warriorMotors) {
+        for (let index = 0; index < this.warriorMotors.length; index += 1) {
+            const motor = this.warriorMotors[index]!;
+            if (this.warriorHealth[index]?.isDepleted()) continue;
             motor.consumeArrived();
             if (!this.isAtFormation(motor)) {
                 return;
@@ -373,7 +393,7 @@ export class SquadEngagementController extends Component {
             motor,
             animator: this.warriorAnimators[index]!,
             worldGridPosition: motor.getWorldGridPosition(squadGridPosition),
-        }));
+        })).filter((candidate) => !this.warriorHealth[candidate.warriorIndex]?.isDepleted());
         const availableSlots = [...candidateSlots];
         const assignments: WarriorSlotAssignment[] = [];
 

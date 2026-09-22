@@ -39,6 +39,19 @@ export class WarriorAttackReceiver extends Component implements AttackImpactRece
     }
 
     public onAttackImpact(signal: AttackImpactSignal): AttackImpactResult {
+        if (!this.health || this.health.isDepleted()) {
+            return {
+                targetId: this.targetId,
+                damageResult: {
+                    requestedDamage: signal.damage,
+                    actualDamage: 0,
+                    healthBefore: this.health?.getCurrentHealth() ?? 0,
+                    healthAfter: this.health?.getCurrentHealth() ?? 0,
+                    becameDepleted: false,
+                },
+                targetDepleted: true,
+            };
+        }
         const damageResult = this.health?.takeDamage(signal.damage) ?? {
             requestedDamage: signal.damage,
             actualDamage: 0,
