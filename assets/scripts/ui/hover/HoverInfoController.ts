@@ -62,6 +62,12 @@ export class HoverInfoController extends Component {
         this.targets.set(source.anchor, source);
     }
 
+    public isHovered(anchor: Node): boolean {
+        return !this.suspended
+            && this.hovered?.anchor === anchor
+            && this.isSourceActive(this.hovered);
+    }
+
     public unregister(anchor: Node): void {
         if (this.uiCandidate?.anchor === anchor) {
             this.uiCandidate = null;
@@ -74,10 +80,7 @@ export class HoverInfoController extends Component {
 
     public notifyUiEnter(anchor: Node, event?: EventMouse): void {
         if (event) {
-            const location = event.getUILocation();
-            this.pointer.set(location.x, location.y);
-            this.windowId = event.windowId;
-            this.hasPointer = true;
+            this.updatePointer(event);
         }
 
         const source = this.targets.get(anchor) ?? null;
@@ -153,6 +156,7 @@ export class HoverInfoController extends Component {
             return;
         }
 
+        this.validateUiCandidate();
         if (this.uiCandidate && this.isSourceActive(this.uiCandidate)) {
             this.changeHovered(this.uiCandidate);
             return;
@@ -315,7 +319,29 @@ export class HoverInfoController extends Component {
         this.panel?.setVisible(false);
     }
 
+    private validateUiCandidate(): void {
+        const candidate = this.uiCandidate;
+        if (!candidate) {
+            return;
+        }
+        if (!this.isSourceActive(candidate)) {
+            this.uiCandidate = null;
+            return;
+        }
+        if (!this.hasPointer) {
+            return;
+        }
+        const transform = candidate.anchor.getComponent(UITransform);
+        if (!transform || !transform.hitTest(this.pointer, this.windowId)) {
+            this.uiCandidate = null;
+        }
+    }
+
     private onMouseMove(event: EventMouse): void {
+        this.updatePointer(event);
+    }
+
+    private updatePointer(event: EventMouse): void {
         event.getLocation(this.pointer);
         this.windowId = event.windowId ?? 0;
         this.hasPointer = true;

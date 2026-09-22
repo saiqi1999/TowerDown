@@ -3,7 +3,7 @@
  * Interaction feedback needs shared, named presets so world and UI entry points feel coherent.
  *
  * Ownership boundary:
- * This file owns static tuning data for hover/click scale pulses and hover brightness.
+ * This file owns static tuning data for sustained hover scale, click pulses, and hover brightness.
  *
  * This file deliberately does NOT:
  * It does not sample animation curves, touch nodes, or decide whether feedback is allowed.
@@ -25,24 +25,24 @@ export interface InteractionPulsePreset {
 }
 
 export interface InteractionFeedbackPreset {
-    readonly hover: InteractionPulsePreset;
+    readonly hoverScaleMultiplier: number;
     readonly click: InteractionPulsePreset;
     readonly hoverBrightnessGain: number;
 }
 
 export const INTERACTION_FEEDBACK_PRESETS: Readonly<Record<InteractionFeedbackPresetId, InteractionFeedbackPreset>> = {
     [InteractionFeedbackPresetId.WorldBuilding]: {
-        hover: { amplitudeX: 0.060, amplitudeY: 0.085, frequencyX: 4, frequencyY: 5, decay: 6, duration: 0.60 },
+        hoverScaleMultiplier: 1.05,
         click: { amplitudeX: 0.080, amplitudeY: -0.105, frequencyX: 4, frequencyY: 5, decay: 6, duration: 0.60 },
         hoverBrightnessGain: 0.06,
     },
     [InteractionFeedbackPresetId.SquadCard]: {
-        hover: { amplitudeX: 0.045, amplitudeY: 0.055, frequencyX: 4.5, frequencyY: 5.5, decay: 7, duration: 0.50 },
+        hoverScaleMultiplier: 1.05,
         click: { amplitudeX: 0.060, amplitudeY: -0.075, frequencyX: 4.5, frequencyY: 5.5, decay: 7, duration: 0.50 },
         hoverBrightnessGain: 0.05,
     },
     [InteractionFeedbackPresetId.BlueprintCard]: {
-        hover: { amplitudeX: 0.045, amplitudeY: 0.065, frequencyX: 4.5, frequencyY: 5.5, decay: 7, duration: 0.55 },
+        hoverScaleMultiplier: 1.05,
         click: { amplitudeX: 0.065, amplitudeY: -0.085, frequencyX: 4.5, frequencyY: 5.5, decay: 7, duration: 0.55 },
         hoverBrightnessGain: 0.05,
     },

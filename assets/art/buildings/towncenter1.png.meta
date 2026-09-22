@@ -20,8 +20,8 @@
         "imageUuidOrDatabaseUri": "a5e06615-45ef-414d-9a35-32431801e4a9",
         "isUuid": true,
         "visible": false,
-        "minfilter": "linear",
-        "magfilter": "linear",
+        "minfilter": "nearest",
+        "magfilter": "nearest",
         "mipfilter": "none",
         "anisotropy": 0
       },
@@ -41,12 +41,12 @@
       "userData": {
         "trimThreshold": 1,
         "rotated": false,
-        "offsetX": -4.5,
-        "offsetY": 7,
-        "trimX": 14,
-        "trimY": 5,
-        "width": 91,
-        "height": 104,
+        "offsetX": 0,
+        "offsetY": 0,
+        "trimX": 0,
+        "trimY": 0,
+        "width": 128,
+        "height": 128,
         "rawWidth": 128,
         "rawHeight": 128,
         "borderTop": 0,
@@ -60,17 +60,17 @@
         "meshType": 0,
         "vertices": {
           "rawPosition": [
-            -45.5,
-            -52,
+            -64,
+            -64,
             0,
-            45.5,
-            -52,
+            64,
+            -64,
             0,
-            -45.5,
-            52,
+            -64,
+            64,
             0,
-            45.5,
-            52,
+            64,
+            64,
             0
           ],
           "indexes": [
@@ -82,33 +82,33 @@
             3
           ],
           "uv": [
-            14,
-            123,
-            105,
-            123,
-            14,
-            19,
-            105,
-            19
+            0,
+            128,
+            128,
+            128,
+            0,
+            0,
+            128,
+            0
           ],
           "nuv": [
-            0.109375,
-            0.1484375,
-            0.8203125,
-            0.1484375,
-            0.109375,
-            0.9609375,
-            0.8203125,
-            0.9609375
+            0,
+            0,
+            1,
+            0,
+            0,
+            1,
+            1,
+            1
           ],
           "minPos": [
-            -45.5,
-            -52,
+            -64,
+            -64,
             0
           ],
           "maxPos": [
-            45.5,
-            52,
+            64,
+            64,
             0
           ]
         },

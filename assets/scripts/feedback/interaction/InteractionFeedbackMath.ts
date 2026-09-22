@@ -1,9 +1,9 @@
 /**
  * Why this file exists:
- * Interaction pulses need deterministic frame-rate independent sampling.
+ * Click pulses need deterministic frame-rate independent sampling.
  *
  * Ownership boundary:
- * This file owns pure math helpers for damped scale pulse composition.
+ * This file owns pure math helpers for damped click scale pulse composition.
  *
  * This file deliberately does NOT:
  * It does not know about Cocos nodes, materials, input events, or gameplay state.

@@ -1,6 +1,7 @@
 /**
  * Why this file exists:
- * Hover and click feedback need one component to compose independent pulses and brightness.
+ * Hover and click feedback need one component to compose sustained hover state,
+ * click pulses, and brightness.
  *
  * Ownership boundary:
  * This file owns one feedback target's visual root scale and listed sprite brightness.
@@ -43,6 +44,7 @@ export class InteractionFeedbackView extends Component {
     private enabledForInteraction = true;
 
     public setup(config: InteractionFeedbackViewConfig): void {
+        this.resetFeedback();
         this.visualRoot = config.visualRoot;
         this.preset = INTERACTION_FEEDBACK_PRESETS[config.presetId];
         this.baseScale.set(config.visualRoot.scale);
@@ -62,9 +64,7 @@ export class InteractionFeedbackView extends Component {
             return;
         }
         this.hovered = hovered;
-        if (hovered && this.enabledForInteraction) {
-            this.pushPulse(this.preset.hover);
-        }
+        this.applyScale();
         this.applyBrightness();
     }
 
@@ -80,6 +80,7 @@ export class InteractionFeedbackView extends Component {
             return;
         }
         this.enabledForInteraction = enabled;
+        this.applyScale();
         this.applyBrightness();
     }
 
@@ -93,13 +94,11 @@ export class InteractionFeedbackView extends Component {
     }
 
     protected onDisable(): void {
-        this.hovered = false;
-        this.applyBrightness();
-        this.pulses.length = 0;
-        this.applyScale();
+        this.resetFeedback();
     }
 
     protected onDestroy(): void {
+        this.resetFeedback();
         this.visualRoot = null;
         this.brightness = null;
         this.pulses.length = 0;
@@ -125,6 +124,9 @@ export class InteractionFeedbackView extends Component {
             return;
         }
 
+        const hoverScale = this.isHoverVisualActive()
+            ? this.preset.hoverScaleMultiplier
+            : 1;
         let sumX = 0;
         let sumY = 0;
         for (const pulse of this.pulses) {
@@ -134,17 +136,29 @@ export class InteractionFeedbackView extends Component {
         }
 
         root.setScale(
-            this.baseScale.x * (1 + clampInteractionScaleDelta(sumX)),
-            this.baseScale.y * (1 + clampInteractionScaleDelta(sumY)),
+            this.baseScale.x * hoverScale * (1 + clampInteractionScaleDelta(sumX)),
+            this.baseScale.y * hoverScale * (1 + clampInteractionScaleDelta(sumY)),
             this.baseScale.z,
         );
     }
 
     private applyBrightness(): void {
         this.brightness?.setBrightnessGain(
-            this.hovered && this.enabledForInteraction
+            this.isHoverVisualActive()
                 ? this.preset.hoverBrightnessGain
                 : 0,
         );
+    }
+
+    private isHoverVisualActive(): boolean {
+        return this.hovered && this.enabledForInteraction;
+    }
+
+    private resetFeedback(): void {
+        this.hovered = false;
+        this.pulses.length = 0;
+        this.now = 0;
+        this.applyScale();
+        this.applyBrightness();
     }
 }
