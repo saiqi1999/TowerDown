@@ -17,7 +17,26 @@ export interface FloorTransitionConfig {
     counter: EnemyKillCounter;
     baseInteraction: BaseInteractionController;
     panel: BasePanelView;
-    commit: (floorInstanceId: string, mapId: StaticFloorId, onError: (error: Error) => void) => void;
+    prepare?: (context: FloorTransitionContext) => FloorTransitionPreparation;
+    commit: (
+        context: FloorTransitionContext,
+        preparation: FloorTransitionPreparation,
+    ) => FloorTransitionCommitResult;
+}
+
+export interface FloorTransitionContext {
+    readonly currentFloorInstanceId: string;
+    readonly nextFloorInstanceId: string;
+    readonly mapId: StaticFloorId;
+}
+
+export interface FloorTransitionPreparation {
+    readonly payload?: unknown;
+}
+
+export interface FloorTransitionCommitResult {
+    readonly success: boolean;
+    readonly error?: Error;
 }
 
 export class FloorTransitionController {
@@ -26,6 +45,8 @@ export class FloorTransitionController {
     private currentMapId: StaticFloorId | null = null;
     private transitioning = false;
     private pendingMapId: StaticFloorId | null = null;
+    private pendingContext: FloorTransitionContext | null = null;
+    private pendingPreparation: FloorTransitionPreparation | null = null;
     private readonly previews = [getStaticFloor('forest'), getStaticFloor('quarry')];
 
     constructor(private readonly config: FloorTransitionConfig) {}
@@ -48,38 +69,84 @@ export class FloorTransitionController {
     }
 
     public choose(mapId: StaticFloorId): void {
-        if (this.transitioning || !this.config.baseInteraction.isOpen()) return;
+        if (this.transitioning || this.pendingContext || !this.config.baseInteraction.isOpen()) return;
         this.transitioning = true;
         this.pendingMapId = mapId;
         this.config.panel.setBusy(true);
         this.config.panel.setError(null);
         const nextInstance = `f${this.sequence + 1}`;
-        const instantiated = instantiateFloor(getStaticFloor(mapId), nextInstance);
-        if (instantiated.resources.length === 0 || instantiated.monsterGroups.length === 0) {
-            this.fail(new Error(`[FloorTransition] invalid floor data: ${mapId}`));
-            return;
-        }
         try {
-            this.config.commit(nextInstance, mapId, (error) => this.fail(error));
-            if (this.transitioning) {
-                this.sequence += 1;
-                this.currentFloorInstanceId = nextInstance;
-                this.currentMapId = mapId;
-                this.pendingMapId = null;
-                this.transitioning = false;
-                this.config.panel.setBusy(false);
-                this.config.baseInteraction.close();
+            const instantiated = instantiateFloor(getStaticFloor(mapId), nextInstance);
+            if (instantiated.resources.length === 0 || instantiated.monsterGroups.length === 0) {
+                this.fail(new Error(`[FloorTransition] invalid floor data: ${mapId}`), false);
+                return;
             }
+            const context: FloorTransitionContext = {
+                currentFloorInstanceId: this.currentFloorInstanceId,
+                nextFloorInstanceId: nextInstance,
+                mapId,
+            };
+            const preparation = this.config.prepare?.(context) ?? {};
+            this.pendingContext = context;
+            this.pendingPreparation = preparation;
+            const result = this.config.commit(context, preparation);
+            if (!result.success) {
+                this.fail(result.error ?? new Error('[FloorTransition] commit rejected.'), true);
+                return;
+            }
+            this.finalize(context);
         } catch (error) {
-            this.fail(error instanceof Error ? error : new Error(String(error)));
+            this.fail(
+                error instanceof Error ? error : new Error(String(error)),
+                this.pendingContext !== null,
+            );
         }
     }
 
-    private fail(error: Error): void {
+    public retryPending(): void {
+        if (
+            this.transitioning
+            || !this.pendingContext
+            || !this.pendingPreparation
+        ) {
+            return;
+        }
+        this.transitioning = true;
+        this.config.panel.setBusy(true);
+        this.config.panel.setError(null);
+        try {
+            const result = this.config.commit(this.pendingContext, this.pendingPreparation);
+            if (!result.success) {
+                this.fail(result.error ?? new Error('[FloorTransition] retry rejected.'), true);
+                return;
+            }
+            this.finalize(this.pendingContext);
+        } catch (error) {
+            this.fail(error instanceof Error ? error : new Error(String(error)), true);
+        }
+    }
+
+    private fail(error: Error, preservePending: boolean): void {
+        if (!preservePending) {
+            this.pendingMapId = null;
+            this.pendingContext = null;
+            this.pendingPreparation = null;
+        }
         this.transitioning = false;
-        this.pendingMapId = null;
         this.config.panel.setBusy(false);
         this.config.panel.setError(error.message);
+    }
+
+    private finalize(context: FloorTransitionContext): void {
+        this.sequence += 1;
+        this.currentFloorInstanceId = context.nextFloorInstanceId;
+        this.currentMapId = context.mapId;
+        this.pendingMapId = null;
+        this.pendingContext = null;
+        this.pendingPreparation = null;
+        this.transitioning = false;
+        this.config.panel.setBusy(false);
+        this.config.baseInteraction.close();
     }
 
     private preview(definition: ReturnType<typeof getStaticFloor>) {

@@ -18,11 +18,17 @@ export enum StatModifierOperation {
     Multiply = 'multiply',
 }
 
+export type CombatUnitTag =
+    | 'infantry'
+    | 'melee_infantry'
+    | 'ranged_infantry';
+
 export interface CombatStatModifier {
     readonly sourceId: string;
     readonly stat: CombatStatId;
     readonly operation: StatModifierOperation;
     readonly value: number;
+    readonly targetTags?: readonly CombatUnitTag[];
 }
 
 export class CombatStatModifierRegistry {
@@ -36,11 +42,18 @@ export class CombatStatModifierRegistry {
         this.modifiers.delete(sourceId);
     }
 
-    public resolve(stat: CombatStatId, baseValue: number): number {
+    public resolve(
+        stat: CombatStatId,
+        baseValue: number,
+        unitTags: readonly CombatUnitTag[] = [],
+    ): number {
         let flatAdd = 0;
         let multiplier = 1;
         for (const modifier of this.modifiers.values()) {
             if (modifier.stat !== stat) continue;
+            if (modifier.targetTags && !modifier.targetTags.some((tag) => unitTags.indexOf(tag) >= 0)) {
+                continue;
+            }
             if (modifier.operation === StatModifierOperation.AddFlat) {
                 flatAdd += modifier.value;
             } else if (modifier.operation === StatModifierOperation.Multiply) {

@@ -44,10 +44,12 @@ export interface SquadSpawnData {
     id: string;
     warriorVisualId: WarriorVisualId;
     memberCount: number;
+    maxMemberCount?: number;
     homeObjectId: string;
     commandSlot: number;
     commandColor: SquadCommandColor;
     spawnPoint?: GridPoint;
+    boundBarracksId?: string;
 }
 
 // 阵型 offset 是 Squad 的共享逻辑数据，而不是 Renderer 的私有布局常量。

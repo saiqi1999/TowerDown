@@ -21,6 +21,11 @@ export class SquadCombatController extends Component {
     public setup(squadId: string, squadMotor: SquadMotor, warriorControllers: WarriorCombatController[]): void {
         this.squadId = squadId; this.squadMotor = squadMotor; this.warriors = warriorControllers; this.state = SquadCombatState.Inactive;
     }
+    public addWarrior(warrior: WarriorCombatController): void {
+        if (this.warriors.indexOf(warrior) < 0) {
+            this.warriors.push(warrior);
+        }
+    }
     public beginGuardCombat(group: MonsterGroupController): void {
         this.currentGroup = group; this.guardDefeatedPending = false; this.state = SquadCombatState.Active;
         group.engageSquad(this.squadId, this);

@@ -15,6 +15,12 @@ import { type ResourceType } from '../world/WorldObjectTypes';
 
 export type ResourceCost = Partial<Record<ResourceType, number>>;
 export enum BuildingCategory { Economy = 0, Research = 1, Defense = 2 }
+export enum BuildingSettlementRole {
+    None = 'none',
+    LumberjackSource = 'lumberjackSource',
+    SwordBarracks = 'swordBarracks',
+    MeleeBlacksmith = 'meleeBlacksmith',
+}
 export enum BuildingVisualId {
     StorageHouse = 'storage_house_01',
     LumberjackHouse = 'lumberjack_house_01',
@@ -27,11 +33,22 @@ export interface BuildingDefinition {
     visualId: BuildingVisualId; visual: BuildingVisualDefinition; visualWidthPixels: number; visualHeightPixels: number; visualScale: number; footprintW: number; footprintH: number;
     cost: ResourceCost; allowedTerrain: readonly TerrainType[];
     blocksNavigation: boolean; eraRequired: number; effectIds: readonly string[]; shortEffectText?: string;
+    settlementRole?: BuildingSettlementRole;
+    settlementText?: string;
 }
-export interface BuildingInstanceData { id: string; definitionId: string; gridX: number; gridY: number; }
+export interface BuildingInstanceData {
+    id: string;
+    definitionId: string;
+    gridX: number;
+    gridY: number;
+    enabled: boolean;
+    createdSequence: number;
+    paidCost: ResourceCost;
+    boundSquadId?: string | null;
+}
 export enum PlacementInvalidReason {
     None = 0, PointerOutsideMap = 1, OutOfBounds = 2, TerrainNotAllowed = 3,
-    Occupied = 4, InsufficientResources = 5, DefinitionMissing = 6,
+    Occupied = 4, InsufficientResources = 5, DefinitionMissing = 6, SquadCapacity = 7,
 }
 export interface BuildingPlacementSnapshot {
     definitionId: string; gridX: number; gridY: number; footprint: readonly GridCell[];

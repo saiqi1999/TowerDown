@@ -12,7 +12,7 @@ import { assetManager, SpriteFrame } from 'cc';
 
 const BUILDING_SPRITE_FRAME_UUIDS: Readonly<Record<string, string>> = {
     storage_house_01: '1110d710-bebe-4d25-88ed-5954c5c5757a@f9941',
-    lumberjack_house_01: '4f285e40-b40e-48cb-9b50-19f6dff09321@f9941',
+    lumberjack_house_01: 'bf1d01c0-f7da-4f0a-9317-43fdc0db77f5@f9941',
     barracks_01: 'd9909d8e-6d10-424d-867f-62d986f3c0e0@f9941',
     blacksmith_house_01: '6b4f0b18-0ff8-40fb-a7cb-be01251b27c3@f9941',
 };

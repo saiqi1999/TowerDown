@@ -83,6 +83,20 @@ export class SquadEngagementController extends Component {
         }
     }
 
+    public addWarrior(
+        motor: WarriorMotor,
+        animator: WarriorAnimator,
+        stats: CombatStats,
+    ): void {
+        const index = this.warriorMotors.length;
+        this.warriorMotors.push(motor);
+        this.warriorAnimators.push(animator);
+        this.warriorCombatStats.push(stats);
+        this.impactUnsubscribers.push(animator.subscribeAttackImpact(() => {
+            this.onWarriorAttackImpact(index);
+        }));
+    }
+
     public beginInteraction(target: WorldObjectData): boolean {
         // beginInteraction 负责把“接近目标”切换成“围住目标”，所以在这里一次性固定 target、slots 和 assignment。
         if (!this.initialized || !this.squadMotor || !this.slotResolver) {

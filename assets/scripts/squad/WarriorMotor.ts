@@ -7,12 +7,13 @@ import { WarriorDirection } from './WarriorSpriteConfig';
 
 const { ccclass } = _decorator;
 
-const LOCAL_MOVE_SPEED_CELLS_PER_SECOND = 5.0;
+const LOCAL_MOVE_SPEED_CELLS_PER_SECOND = 2.0;
 const LOCAL_ARRIVE_EPSILON = 0.03;
 
 export interface WarriorMotorConfig {
     animator: WarriorAnimator;
     formationOffset: GridPoint;
+    moveSpeedCellsPerSecond?: number;
 }
 
 @ccclass('WarriorMotor')
@@ -25,6 +26,7 @@ export class WarriorMotor extends Component {
     private arrivedPending = false;
     private lastDirection = WarriorDirection.Down;
     private initialized = false;
+    private moveSpeedCellsPerSecond = LOCAL_MOVE_SPEED_CELLS_PER_SECOND;
 
     public setup(config: WarriorMotorConfig): void {
         this.animator = config.animator;
@@ -32,6 +34,7 @@ export class WarriorMotor extends Component {
             x: config.formationOffset.x,
             y: config.formationOffset.y,
         };
+        this.moveSpeedCellsPerSecond = config.moveSpeedCellsPerSecond ?? LOCAL_MOVE_SPEED_CELLS_PER_SECOND;
         this.currentLocalGridOffset = {
             x: config.formationOffset.x,
             y: config.formationOffset.y,
@@ -152,7 +155,7 @@ export class WarriorMotor extends Component {
             this.animator?.playWalk(nextDirection);
         }
 
-        const maxStep = LOCAL_MOVE_SPEED_CELLS_PER_SECOND * dt;
+        const maxStep = this.moveSpeedCellsPerSecond * dt;
         if (distance <= maxStep) {
             this.snapToTarget();
             return;

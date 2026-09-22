@@ -33,13 +33,16 @@ export class SquadSelectionController extends Component {
         squads: readonly SquadSpawnData[],
         handles: ReadonlyMap<string, SquadRuntimeHandle>,
     ): void {
+        const previousSelectedSquadId = this.selectedSquadId;
         this.handles = handles;
         this.slotToSquadId.clear();
         const sorted = [...squads].sort((a, b) => a.commandSlot - b.commandSlot);
         for (const squad of sorted) {
             if (handles.has(squad.id)) this.slotToSquadId.set(squad.commandSlot, squad.id);
         }
-        this.selectedSquadId = sorted.find((squad) => handles.has(squad.id))?.id ?? null;
+        this.selectedSquadId = previousSelectedSquadId && handles.has(previousSelectedSquadId)
+            ? previousSelectedSquadId
+            : sorted.find((squad) => handles.has(squad.id))?.id ?? null;
         this.notify();
     }
 

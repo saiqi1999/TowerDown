@@ -5,6 +5,7 @@ export interface MonsterRuntimeDefinition {
     attackDamage: number;
     attackRangeCells: number;
     preferredCombatDistanceCells: number;
+    attackIntervalSeconds?: number;
     moveSpeedCellsPerSecond: number;
     moveFrameDuration: number;
     attackFrameDuration: number;
@@ -17,6 +18,7 @@ const DEFINITIONS: Record<MonsterType, MonsterRuntimeDefinition> = {
         attackDamage: 4,
         attackRangeCells: 0.85,
         preferredCombatDistanceCells: 0.75,
+        attackIntervalSeconds: 0.24,
         moveSpeedCellsPerSecond: 3.2,
         moveFrameDuration: 0.14,
         attackFrameDuration: 0.12,

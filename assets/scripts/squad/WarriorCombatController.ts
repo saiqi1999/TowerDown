@@ -26,9 +26,11 @@ export class WarriorCombatController extends Component implements CombatUnitRef 
     private animator!: WarriorAnimator;
     private hub!: CombatEventHub;
     private unitId = '';
+    private attackCooldown = 0;
 
     public setup(config: { unitId: string; squadMotor: SquadMotor; motor: WarriorMotor; animator: WarriorAnimator; health: HealthComponent; stats: CombatStats; hub: CombatEventHub }): void {
         this.unitId = config.unitId; this.squadMotor = config.squadMotor; this.motor = config.motor; this.animator = config.animator; this.health = config.health; this.stats = config.stats; this.hub = config.hub;
+        this.attackCooldown = 0;
         this.impactUnsubscribe?.();
         this.impactUnsubscribe = this.animator.subscribeAttackImpact(() => this.onImpact());
         this.health.subscribe((_current, _max, result) => { if (result?.becameDepleted) this.die(); });
@@ -37,13 +39,14 @@ export class WarriorCombatController extends Component implements CombatUnitRef 
     public isAlive(): boolean { return !this.health.isDepleted(); }
     public getWorldGridPosition() { return this.motor.getWorldGridPosition(this.squadMotor.getGridPosition()); }
     public enterGuardCombat(group: MonsterGroupController): void { if (!this.isAlive()) return; this.group = group; this.target = null; this.state = WarriorCombatState.AcquiringTarget; }
-    public exitCombat(): void { this.releaseTarget(); this.motor.stop(); this.animator.playIdle(); this.state = this.isAlive() ? WarriorCombatState.Inactive : WarriorCombatState.Dead; this.group = null; }
+    public exitCombat(): void { this.releaseTarget(); this.motor.stop(); this.animator.playIdle(); this.attackCooldown = 0; this.state = this.isAlive() ? WarriorCombatState.Inactive : WarriorCombatState.Dead; this.group = null; }
     public resetForFloor(): void {
         this.releaseTarget();
         this.group = null;
         this.motor.stop();
         this.health.restoreFullForFloor();
         this.animator.resetToIdleForFloor();
+        this.attackCooldown = 0;
         this.state = WarriorCombatState.Inactive;
     }
     public getCombatState(): WarriorCombatState { return this.state; }
@@ -70,6 +73,7 @@ export class WarriorCombatController extends Component implements CombatUnitRef 
     //     void dt;
     // }
     update(dt: number): void {
+    this.attackCooldown = Math.max(0, this.attackCooldown - Math.max(0, dt));
     if (
         !this.isAlive()
         || !this.group
@@ -148,11 +152,13 @@ export class WarriorCombatController extends Component implements CombatUnitRef 
     void dt;
 }
     private releaseTarget(): void { if (this.target && this.group) this.group.releaseWarriorTarget(this.id, this.target.id); this.target = null; }
-    private die(): void { this.releaseTarget(); this.motor.stop(); this.animator.playIdle(); this.state = WarriorCombatState.Dead; }
+    private die(): void { this.releaseTarget(); this.motor.stop(); this.animator.playIdle(); this.attackCooldown = 0; this.state = WarriorCombatState.Dead; }
     private onImpact(): void {
         if (this.state !== WarriorCombatState.Attacking || !this.target) return;
+        if (this.attackCooldown > 0) return;
         if (distance(this.getWorldGridPosition(), this.target.getWorldGridPosition()) <= this.stats.getAttackRangeCells() + 0.08) {
             this.hub.emitAttackImpact({ attackerId: this.id, targetId: this.target.id, damage: this.stats.getAttackDamage() });
+            this.attackCooldown = this.stats.getAttackIntervalSeconds();
         }
     }
     onDestroy(): void { this.impactUnsubscribe?.(); }

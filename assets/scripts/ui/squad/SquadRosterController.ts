@@ -25,29 +25,48 @@ import { type HoverInfoController } from '../hover/HoverInfoController';
 export class SquadRosterController {
     private unsubscribe: (() => void) | null = null;
     private readonly itemViews = new Map<string, SquadRosterItemView>();
+    private currentSquads: readonly SquadSpawnData[];
+    private currentHandles: ReadonlyMap<string, SquadRuntimeHandle>;
 
     constructor(
         private readonly root: Node,
-        private readonly squads: readonly SquadSpawnData[],
-        private readonly handles: ReadonlyMap<string, SquadRuntimeHandle>,
+        squads: readonly SquadSpawnData[],
+        handles: ReadonlyMap<string, SquadRuntimeHandle>,
         private readonly selection: SquadSelectionController,
         private readonly presentationById: ReadonlyMap<string, SquadPresentation>,
         private readonly hover: HoverInfoController,
         private readonly brightnessMaterial: Material | null,
-    ) {}
+    ) {
+        this.currentSquads = squads;
+        this.currentHandles = handles;
+    }
 
     public setup(): void {
-        const sorted = [...this.squads].filter((squad) => this.handles.has(squad.id))
+        this.refresh(this.currentSquads, this.currentHandles);
+        this.unsubscribe = this.selection.subscribe((state) => this.syncSelected(state));
+    }
+
+    public refresh(
+        squads: readonly SquadSpawnData[],
+        handles: ReadonlyMap<string, SquadRuntimeHandle>,
+    ): void {
+        this.currentSquads = squads;
+        this.currentHandles = handles;
+        const sorted = [...squads].filter((squad) => handles.has(squad.id))
             .sort((a, b) => a.commandSlot - b.commandSlot);
         (this.root.getComponent(UITransform) ?? this.root.addComponent(UITransform))
             .setContentSize(SQUAD_ROSTER_CARD_WIDTH, sorted.length * SQUAD_ROSTER_CARD_HEIGHT + Math.max(0, sorted.length - 1) * SQUAD_ROSTER_CARD_GAP);
         this.root.setPosition(SQUAD_ROSTER_LEFT_X, SQUAD_ROSTER_TOP_Y, 0);
-        this.root.removeAllChildren();
+        for (const child of [...this.root.children]) {
+            child.active = false;
+            child.removeFromParent();
+            child.destroy();
+        }
         this.itemViews.clear();
         sorted.forEach((squad, index) => {
             const presentation = this.presentationById.get(squad.id);
             if (!presentation) return;
-            const handle = this.handles.get(squad.id);
+            const handle = this.currentHandles.get(squad.id);
             if (!handle) return;
             const node = new Node(`SquadCard_${squad.id}`);
             node.setParent(this.root);
@@ -66,12 +85,19 @@ export class SquadRosterController {
             });
             this.itemViews.set(squad.id, view);
         });
-        this.unsubscribe = this.selection.subscribe((state) => this.syncSelected(state));
+        this.syncSelected({
+            selectedSquadId: this.selection.getSelectedSquadId(),
+        });
     }
 
     public destroy(): void {
         this.unsubscribe?.();
         this.unsubscribe = null;
+        for (const child of [...this.root.children]) {
+            child.active = false;
+            child.removeFromParent();
+            child.destroy();
+        }
         this.itemViews.clear();
     }
 

@@ -12,6 +12,7 @@ export interface SquadMotorConfig {
     mapWidth: number;
     mapHeight: number;
     warriors: WarriorAnimator[];
+    moveSpeedCellsPerSecond?: number;
 }
 
 @ccclass('SquadMotor')
@@ -19,7 +20,7 @@ export class SquadMotor extends Component {
     private currentGridPoint: GridPoint = { x: 0, y: 0 };
     private waypoints: GridPoint[] = [];
     private waypointIndex = 0;
-    private moveSpeedCellsPerSecond = 4.25;
+    private moveSpeedCellsPerSecond = 2;
     private mapWidth = 0;
     private mapHeight = 0;
     private warriors: WarriorAnimator[] = [];
@@ -35,6 +36,7 @@ export class SquadMotor extends Component {
         this.mapWidth = config.mapWidth;
         this.mapHeight = config.mapHeight;
         this.warriors = config.warriors;
+        this.moveSpeedCellsPerSecond = config.moveSpeedCellsPerSecond ?? 2;
         this.waypoints = [];
         this.waypointIndex = 0;
         this.arrivedPending = false;
@@ -52,6 +54,12 @@ export class SquadMotor extends Component {
 
     public getFacingDirection(): WarriorDirection {
         return this.lastDirection;
+    }
+
+    public addWarrior(warrior: WarriorAnimator): void {
+        if (this.warriors.indexOf(warrior) < 0) {
+            this.warriors.push(warrior);
+        }
     }
 
     public teleportForFloor(point: GridPoint): void {

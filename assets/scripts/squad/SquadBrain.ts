@@ -102,6 +102,12 @@ export class SquadBrain extends Component {
         this.onGuardRetreatRequested = requester;
     }
 
+    public addWarrior(warrior: WarriorAnimator): void {
+        if (this.warriors.indexOf(warrior) < 0) {
+            this.warriors.push(warrior);
+        }
+    }
+
     public issueTarget(targetId: string): CommandResult {
         const target = this.worldObjectRegistry.get(targetId);
         if (!target) {

@@ -29,6 +29,26 @@ export class BuildingRuntimeRegistry {
         this.notify();
         return entry;
     }
+
+    public setEnabled(id: string, enabled: boolean): boolean {
+        const entry = this.entries.get(id);
+        if (!entry || entry.data.enabled === enabled) {
+            return false;
+        }
+        entry.data.enabled = enabled;
+        this.notify();
+        return true;
+    }
+
+    public bindSquad(id: string, squadId: string | null): boolean {
+        const entry = this.entries.get(id);
+        if (!entry || entry.data.boundSquadId === squadId) {
+            return false;
+        }
+        entry.data.boundSquadId = squadId;
+        this.notify();
+        return true;
+    }
     public subscribe(listener: BuildingRuntimeListener): () => void {
         this.listeners.add(listener);
         return () => this.listeners.delete(listener);

@@ -34,7 +34,7 @@ export function getCommandColor(color: SquadCommandColor): Color {
 export function buildSquadPresentationMap(
     squads: readonly SquadSpawnData[],
     assets: SquadPresentationAssets,
-): ReadonlyMap<string, SquadPresentation> {
+): Map<string, SquadPresentation> {
     const result = new Map<string, SquadPresentation>();
     for (const squad of squads) {
         const portraitFrame = squad.warriorVisualId === WarriorVisualId.SwordWarrior

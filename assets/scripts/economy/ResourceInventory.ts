@@ -25,6 +25,10 @@ export class ResourceInventory {
         return this.amounts.get(type) ?? 0;
     }
 
+    public getSnapshot(): ResourceInventorySnapshot {
+        return this.snapshot();
+    }
+
     public add(type: ResourceType, amount: number): void {
         if (amount <= 0) {
             return;
@@ -83,6 +87,24 @@ export class ResourceInventory {
             }
         }
         if (changed) this.notify();
+    }
+
+    public replaceSnapshot(snapshot: ResourceInventorySnapshot): void {
+        const values = [
+            snapshot.wood,
+            snapshot.stone,
+            snapshot.food,
+            snapshot.gold,
+        ];
+        if (values.some((value) => !Number.isInteger(value) || value < 0)) {
+            throw new Error('[ResourceInventory] snapshot must contain non-negative integers.');
+        }
+
+        this.amounts.set(ResourceType.Wood, snapshot.wood);
+        this.amounts.set(ResourceType.Stone, snapshot.stone);
+        this.amounts.set(ResourceType.Food, snapshot.food);
+        this.amounts.set(ResourceType.Gold, snapshot.gold);
+        this.notify();
     }
 
     public subscribe(listener: ResourceInventoryListener): () => void {

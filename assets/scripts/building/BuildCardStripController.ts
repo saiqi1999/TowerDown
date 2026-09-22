@@ -19,6 +19,7 @@ import { BuildingSpriteFrameFactory } from './BuildingSpriteFrameFactory';
 import { BuildToolController, type BuildToolState } from './BuildToolController';
 import { BLUEPRINT_CARD_BOTTOM_MARGIN, BLUEPRINT_CARD_GAP, BLUEPRINT_CARD_HEIGHT, BLUEPRINT_CARD_WIDTH } from './BuildCardUiConfig';
 import { type HoverInfoController } from '../ui/hover/HoverInfoController';
+import { type BuildingDefinition, type ResourceCost } from './BuildingTypes';
 
 export class BuildCardStripController {
     private blueprintUnsubscribe: (() => void) | null = null;
@@ -35,6 +36,8 @@ export class BuildCardStripController {
         private readonly cardFrame: SpriteFrame | null,
         private readonly hover: HoverInfoController,
         private readonly brightnessMaterial: Material | null,
+        private readonly costResolver: (definition: BuildingDefinition) => ResourceCost = (definition) => definition.cost,
+        private readonly placementGate: (definition: BuildingDefinition) => boolean = () => true,
     ) {}
 
     public setup(): void {
@@ -69,7 +72,15 @@ export class BuildCardStripController {
             node.layer = this.root.layer;
             node.setPosition(-totalWidth / 2 + BLUEPRINT_CARD_WIDTH / 2 + index * (BLUEPRINT_CARD_WIDTH + BLUEPRINT_CARD_GAP), 0, 0);
             const view = node.addComponent(BuildingBlueprintCardView);
-            view.setup(definition, this.factory, this.cardFrame, () => this.tool.select(id), this.hover, this.brightnessMaterial);
+            view.setup(
+                definition,
+                this.factory,
+                this.cardFrame,
+                () => this.tool.select(id),
+                this.hover,
+                this.brightnessMaterial,
+                this.costResolver(definition),
+            );
             this.cardViews.set(id, view);
         });
         this.syncSelected(this.tool.getState());
@@ -83,7 +94,12 @@ export class BuildCardStripController {
     private syncAffordable(_snapshot?: ResourceInventorySnapshot): void {
         for (const [id, view] of this.cardViews) {
             const definition = getAllBuildingDefinitions().find((item) => item.id === id);
-            if (definition) view.setAffordable(this.inventory.canAfford(definition.cost));
+            if (definition) {
+                view.setAffordable(
+                    this.inventory.canAfford(this.costResolver(definition))
+                    && this.placementGate(definition),
+                );
+            }
         }
     }
 }

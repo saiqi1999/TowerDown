@@ -38,6 +38,9 @@ export class BuildingEffectSystem {
     private rebuild(): void {
         this.removeActiveSources();
         for (const entry of this.registry.getAll()) {
+            if (!entry.data.enabled) {
+                continue;
+            }
             const definition = getBuildingDefinition(entry.data.definitionId);
             if (!definition) continue;
             for (const effectId of definition.effectIds) {

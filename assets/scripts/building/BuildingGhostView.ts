@@ -9,7 +9,7 @@
  * 不读取 Pointer、不做 Grid 投影、不判断 placement rule，也不执行提交。
  */
 import { Color, Node, Sprite, UITransform } from 'cc';
-import { GRID_RENDER_SCALE, GRID_SOURCE_SIZE } from '../grid/GridConfig';
+import { GRID_RENDER_SIZE } from '../grid/GridConfig';
 import { gridRectToWorldCenter } from '../grid/GridTransform';
 import { type BuildingDefinition, type BuildingPlacementSnapshot } from './BuildingTypes';
 import { BuildingSpriteFrameFactory } from './BuildingSpriteFrameFactory';
@@ -38,6 +38,11 @@ export class BuildingGhostView {
             this.hide();
             return;
         }
+        const transform = this.node.getComponent(UITransform) ?? this.node.addComponent(UITransform);
+        transform.setContentSize(
+            definition.footprintW * GRID_RENDER_SIZE,
+            definition.footprintH * GRID_RENDER_SIZE,
+        );
         this.sprite.spriteFrame = this.factory.getFrame(definition);
     }
     public updatePlacement(definition: BuildingDefinition, snapshot: BuildingPlacementSnapshot): void {

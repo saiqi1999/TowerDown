@@ -91,6 +91,7 @@ export class MonsterGroupRenderer {
                     attackDamage: config.attackDamage,
                     attackRangeCells: config.attackRangeCells,
                     preferredCombatDistanceCells: config.preferredCombatDistanceCells,
+                    attackIntervalSeconds: config.attackIntervalSeconds,
                 });
                 const health = node.addComponent(HealthComponent); health.setup(config.maxHealth);
                 node.addComponent(HoverInfoTarget).setup({

@@ -68,9 +68,14 @@ import { CombatStatModifierRegistry } from '../combat/CombatStatModifierRegistry
 import { BuildingVisualLibrary } from '../building/BuildingVisualLibrary';
 import { BuildingEffectSystem } from '../building/effects/BuildingEffectSystem';
 import { validateBuildingEffectReferences } from '../building/effects/BuildingEffectCatalog';
+import { PrimitiveRunState } from '../building/PrimitiveRunState';
+import { type BuildingFloorSettlementPlan } from '../building/BuildingFloorSettlement';
 import { SquadSelectionController } from '../squad/SquadSelectionController';
 import { SquadUiAssetLoader } from '../ui/squad/SquadUiAssetLoader';
-import { buildSquadPresentationMap } from '../ui/squad/SquadPresentationConfig';
+import {
+    buildSquadPresentationMap,
+    getCommandColor,
+} from '../ui/squad/SquadPresentationConfig';
 import { SquadRosterController } from '../ui/squad/SquadRosterController';
 import { HoverInfoAssetLoader } from '../ui/hover/HoverInfoAssetLoader';
 import { HoverInfoController } from '../ui/hover/HoverInfoController';
@@ -280,6 +285,7 @@ export class MainMapController extends Component {
         );
         validateBuildingEffectReferences();
         const playerCombatModifiers = new CombatStatModifierRegistry();
+        const primitiveRunState = new PrimitiveRunState(playerCombatModifiers);
         const buildingVisualLibrary = await BuildingVisualLibrary.load();
 
         this.structureRoot = structureRoot;
@@ -398,15 +404,9 @@ export class MainMapController extends Component {
         const selectionNode = this.getOrCreateChild(mapRoot, 'SquadSelectionController');
         const selection = selectionNode.getComponent(SquadSelectionController)
             ?? selectionNode.addComponent(SquadSelectionController);
-        selection.setup(STATIC_SQUADS, squadHandles);
+        selection.setup(primitiveRunState.getSquads(), squadHandles);
         for (const handle of squadHandles.values()) {
-            handle.brain.setGuardEncounterRequester((squadId, objectId) =>
-                this.beginGuardCombat(squadId, objectId, squadHandles));
-            handle.brain.setGuardRetreatRequester((_squadId, objectId) => {
-                const group = this.monsterRegistry?.getByGuardedObject(objectId);
-                group?.markSquadRetreating(handle.id);
-                handle.combat.requestRetreat();
-            });
+            this.configureSquadGuardCallbacks(handle, squadHandles);
         }
 
         commandController.setup({
@@ -445,7 +445,18 @@ export class MainMapController extends Component {
             interactionBrightnessMaterial,
         );
         const blueprintInventory = new BuildingBlueprintInventory();
-        const validator = new BuildingPlacementValidator(STATIC_MAP, worldCellGrid, resourceInventory);
+        const placementCostResolver = (definition: import('../building/BuildingTypes').BuildingDefinition) =>
+            primitiveRunState.getEffectiveCost(definition);
+        const placementGate = (definition: import('../building/BuildingTypes').BuildingDefinition) =>
+            primitiveRunState.canPlaceDefinition(definition);
+        const validator = new BuildingPlacementValidator(
+            STATIC_MAP,
+            worldCellGrid,
+            resourceInventory,
+            placementCostResolver,
+            placementGate,
+        );
+        let roster: SquadRosterController | null = null;
         const service = new BuildingPlacementService(
             validator,
             resourceInventory,
@@ -453,6 +464,40 @@ export class MainMapController extends Component {
             navigationGrid,
             buildingRenderer,
             buildingRegistry,
+            placementCostResolver,
+            (instance) => {
+                const squad = primitiveRunState.registerBarracksPlacement(instance);
+                if (!squad || !this.squadRenderer) {
+                    return;
+                }
+                const handle = this.squadRenderer.addSquad(
+                    squad,
+                    STATIC_MAP[0]?.length ?? 0,
+                    STATIC_MAP.length,
+                );
+                squadHandles.set(squad.id, handle);
+                squadPresentationById.set(squad.id, {
+                    commandColor: getCommandColor(squad.commandColor),
+                    portraitFrame: swordWarriorPortrait,
+                });
+                this.configureSquadGuardCallbacks(handle, squadHandles);
+                selection.setup(primitiveRunState.getSquads(), squadHandles);
+                roster?.refresh(primitiveRunState.getSquads(), squadHandles);
+            },
+            (instance) => {
+                const squadId = instance.boundSquadId;
+                if (squadId) {
+                    const handle = squadHandles.get(squadId);
+                    if (handle && this.squadRenderer) {
+                        this.squadRenderer.removeSquad(handle);
+                    }
+                    squadHandles.delete(squadId);
+                    squadPresentationById.delete(squadId);
+                }
+                primitiveRunState.rollbackBarracksPlacement(instance);
+                selection.setup(primitiveRunState.getSquads(), squadHandles);
+                roster?.refresh(primitiveRunState.getSquads(), squadHandles);
+            },
         );
         const ghost = new BuildingGhostView(
             previewRoot,
@@ -471,85 +516,112 @@ export class MainMapController extends Component {
             counter: enemyKillCounter,
             baseInteraction,
             panel: basePanel,
-            commit: (floorInstanceId, mapId) => {
-                const instance = instantiateFloor(getStaticFloor(mapId), floorInstanceId);
-                const nextObjects = [worldObjectRegistry.get('base_main')!, ...instance.resources];
-                const candidateNavigation = new NavigationGridBuilder().build(STATIC_MAP, nextObjects);
-                const candidateCells = new WorldCellGrid(
-                    STATIC_MAP[0]?.length ?? 0,
-                    STATIC_MAP.length,
-                );
-                for (const object of nextObjects) {
-                    const visual = getWorldVisualDefinition(object.visualId);
-                    candidateCells.claimRect(
-                        object.id,
-                        object.kind === 0 ? WorldCellFlag.Base : WorldCellFlag.Resource,
-                        object.gridX,
-                        object.gridY,
-                        visual.w,
-                        visual.h,
+            prepare: (context) => ({
+                payload: primitiveRunState.prepareSettlement(
+                    context.currentFloorInstanceId,
+                    buildingRegistry.getAll().map((entry) => entry.data),
+                    resourceInventory,
+                ),
+            }),
+            commit: (context, preparation) => {
+                this.combatEventHub?.setImpactBlockedPredicate(() => transition.isTransitioning());
+                try {
+                    const settlementPlan = preparation.payload as BuildingFloorSettlementPlan;
+                    const instance = instantiateFloor(
+                        getStaticFloor(context.mapId),
+                        context.nextFloorInstanceId,
                     );
-                }
-                for (const entry of buildingRegistry.getAll()) {
-                    const definition = getBuildingDefinition(entry.data.definitionId);
-                    if (!definition) throw new Error(`[FloorTransition] building definition missing: ${entry.data.definitionId}`);
-                    candidateCells.claimRect(
-                        entry.data.id,
-                        WorldCellFlag.Building,
-                        entry.data.gridX,
-                        entry.data.gridY,
-                        definition.footprintW,
-                        definition.footprintH,
+                    const nextObjects = [worldObjectRegistry.get('base_main')!, ...instance.resources];
+                    const candidateNavigation = new NavigationGridBuilder().build(STATIC_MAP, nextObjects);
+                    const candidateCells = new WorldCellGrid(
+                        STATIC_MAP[0]?.length ?? 0,
+                        STATIC_MAP.length,
                     );
-                    if (definition.blocksNavigation) {
-                        for (let y = entry.data.gridY; y < entry.data.gridY + definition.footprintH; y += 1) {
-                            for (let x = entry.data.gridX; x < entry.data.gridX + definition.footprintW; x += 1) {
-                                candidateNavigation.setBlocked(x, y);
+                    for (const object of nextObjects) {
+                        const visual = getWorldVisualDefinition(object.visualId);
+                        candidateCells.claimRect(
+                            object.id,
+                            object.kind === 0 ? WorldCellFlag.Base : WorldCellFlag.Resource,
+                            object.gridX,
+                            object.gridY,
+                            visual.w,
+                            visual.h,
+                        );
+                    }
+                    for (const entry of buildingRegistry.getAll()) {
+                        const definition = getBuildingDefinition(entry.data.definitionId);
+                        if (!definition) throw new Error(`[FloorTransition] building definition missing: ${entry.data.definitionId}`);
+                        candidateCells.claimRect(
+                            entry.data.id,
+                            WorldCellFlag.Building,
+                            entry.data.gridX,
+                            entry.data.gridY,
+                            definition.footprintW,
+                            definition.footprintH,
+                        );
+                        if (definition.blocksNavigation) {
+                            for (let y = entry.data.gridY; y < entry.data.gridY + definition.footprintH; y += 1) {
+                                for (let x = entry.data.gridX; x < entry.data.gridX + definition.footprintW; x += 1) {
+                                    candidateNavigation.setBlocked(x, y);
+                                }
                             }
                         }
                     }
+                    navigationGrid.replaceFrom(candidateNavigation);
+                    worldCellGrid.replaceFrom(candidateCells);
+                    const settlementApplied = primitiveRunState.hasSettledFloor(context.currentFloorInstanceId)
+                        || primitiveRunState.commitSettlement(settlementPlan, resourceInventory);
+                    if (!settlementApplied) {
+                        throw new Error(`[FloorTransition] settlement was already committed with an incompatible plan: ${context.currentFloorInstanceId}`);
+                    }
+                    for (const squad of primitiveRunState.getSquads()) {
+                        const handle = squadHandles.get(squad.id);
+                        if (handle) {
+                            this.squadRenderer?.addMembers(handle, squad.memberCount);
+                        }
+                    }
+                    roster?.refresh(primitiveRunState.getSquads(), squadHandles);
+                    lifecycle.clearPendingForFloorChange();
+                    commandController.clearTargetsForFloorChange();
+                    worldObjectRegistry.replaceResources(instance.resources);
+                    this.worldObjectRenderer?.replaceResources(
+                        instance.resources,
+                        STATIC_MAP[0]?.length ?? 0,
+                        STATIC_MAP.length,
+                    );
+                    monsterRenderer.render(
+                        instance.monsterGroups,
+                        nextObjects,
+                        STATIC_MAP[0]?.length ?? 0,
+                        STATIC_MAP.length,
+                        this.monsterRegistry ?? undefined,
+                        context.nextFloorInstanceId,
+                    );
+                    commandController.bindWorldObjectViews(
+                        this.node.getComponentsInChildren(WorldObjectView),
+                    );
+                    const ids: string[] = [];
+                    for (const group of instance.monsterGroups) {
+                        for (const member of group.members) ids.push(member.id);
+                    }
+                    enemyKillCounter.beginFloor(context.nextFloorInstanceId, ids);
+                    const homeCells = new Map<string, import('../navigation/NavigationTypes').GridCell>();
+                    const points = new Map<string, import('../navigation/NavigationTypes').GridPoint>();
+                    const base = worldObjectRegistry.get('base_main');
+                    const baseX = base?.gridX ?? 18;
+                    const baseY = base?.gridY ?? 10;
+                    let recoveryIndex = 0;
+                    for (const [id] of squadHandles) {
+                        const point = { x: baseX + 1 + recoveryIndex * 2, y: baseY + 4 };
+                        recoveryIndex += 1;
+                        points.set(id, point);
+                        homeCells.set(id, { x: Math.floor(point.x), y: Math.floor(point.y) });
+                    }
+                    recovery.recover(squadHandles, homeCells, points);
+                    return { success: true };
+                } finally {
+                    this.combatEventHub?.setImpactBlockedPredicate(null);
                 }
-                navigationGrid.replaceFrom(candidateNavigation);
-                worldCellGrid.replaceFrom(candidateCells);
-                lifecycle.clearPendingForFloorChange();
-                commandController.clearTargetsForFloorChange();
-                this.combatEventHub?.setImpactBlockedPredicate(() => transition.isTransitioning());
-                worldObjectRegistry.replaceResources(instance.resources);
-                this.worldObjectRenderer?.replaceResources(
-                    instance.resources,
-                    STATIC_MAP[0]?.length ?? 0,
-                    STATIC_MAP.length,
-                );
-                monsterRenderer.render(
-                    instance.monsterGroups,
-                    nextObjects,
-                    STATIC_MAP[0]?.length ?? 0,
-                    STATIC_MAP.length,
-                    this.monsterRegistry ?? undefined,
-                    floorInstanceId,
-                );
-                commandController.bindWorldObjectViews(
-                    this.node.getComponentsInChildren(WorldObjectView),
-                );
-                const ids: string[] = [];
-                for (const group of instance.monsterGroups) {
-                    for (const member of group.members) ids.push(member.id);
-                }
-                enemyKillCounter.beginFloor(floorInstanceId, ids);
-                const homeCells = new Map<string, import('../navigation/NavigationTypes').GridCell>();
-                const points = new Map<string, import('../navigation/NavigationTypes').GridPoint>();
-                const base = worldObjectRegistry.get('base_main');
-                const baseX = base?.gridX ?? 18;
-                const baseY = base?.gridY ?? 10;
-                let recoveryIndex = 0;
-                for (const [id] of squadHandles) {
-                    const point = { x: baseX + 1 + recoveryIndex * 2, y: baseY + 4 };
-                    recoveryIndex += 1;
-                    points.set(id, point);
-                    homeCells.set(id, { x: Math.floor(point.x), y: Math.floor(point.y) });
-                }
-                recovery.recover(squadHandles, homeCells, points);
-                this.combatEventHub?.setImpactBlockedPredicate(null);
             },
         });
         transition.setupPanel();
@@ -575,12 +647,14 @@ export class MainMapController extends Component {
             buildingUiAssets.blueprintCardFrame,
             hoverInfo,
             interactionBrightnessMaterial,
+            placementCostResolver,
+            (definition) => primitiveRunState.canPlaceDefinition(definition).allowed,
         );
         cardStrip.setup();
         const rosterNode = this.getOrCreateChild(hudRoot, 'SquadRosterRoot');
-        const roster = new SquadRosterController(
+        roster = new SquadRosterController(
             rosterNode,
-            STATIC_SQUADS,
+            primitiveRunState.getSquads(),
             squadHandles,
             selection,
             squadPresentationById,
@@ -632,6 +706,19 @@ export class MainMapController extends Component {
         if (!group || !squad || group.getState() === 3) return false;
         squad.combat.beginGuardCombat(group);
         return true;
+    }
+
+    private configureSquadGuardCallbacks(
+        handle: import('../squad/SquadTypes').SquadRuntimeHandle,
+        squadHandles: ReadonlyMap<string, import('../squad/SquadTypes').SquadRuntimeHandle>,
+    ): void {
+        handle.brain.setGuardEncounterRequester((squadId, objectId) =>
+            this.beginGuardCombat(squadId, objectId, squadHandles));
+        handle.brain.setGuardRetreatRequester((_squadId, objectId) => {
+            const group = this.monsterRegistry?.getByGuardedObject(objectId);
+            group?.markSquadRetreating(handle.id);
+            handle.combat.requestRetreat();
+        });
     }
 
     private loadAtlasSpriteFrame(): Promise<SpriteFrame> {

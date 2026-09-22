@@ -9,7 +9,7 @@
  * 不验证、不扣资源、不修改占格/导航，也不执行效果。
  */
 import { Material, Node, Sprite, UITransform } from 'cc';
-import { GRID_RENDER_SCALE, GRID_SOURCE_SIZE } from '../grid/GridConfig';
+import { GRID_RENDER_SIZE } from '../grid/GridConfig';
 import { gridRectToWorldCenter } from '../grid/GridTransform';
 import { type BuildingDefinition, type BuildingInstanceData } from './BuildingTypes';
 import { BuildingSpriteFrameFactory } from './BuildingSpriteFrameFactory';
@@ -32,7 +32,10 @@ export class BuildingRenderer {
 
     public create(instance: BuildingInstanceData, definition: BuildingDefinition): Node {
         const node = new Node(`Building_${instance.id}`); node.setParent(this.root); node.layer = this.root.layer;
-        node.addComponent(UITransform).setContentSize(definition.visualWidthPixels, definition.visualHeightPixels);
+        node.addComponent(UITransform).setContentSize(
+            definition.footprintW * GRID_RENDER_SIZE,
+            definition.footprintH * GRID_RENDER_SIZE,
+        );
         const feedbackRoot = new Node('FeedbackRoot');
         feedbackRoot.setParent(node);
         feedbackRoot.layer = node.layer;
@@ -63,6 +66,9 @@ export class BuildingRenderer {
                 rows: [
                     ...(definition.shortEffectText
                         ? [{ label: '效果', value: definition.shortEffectText }]
+                        : []),
+                    ...(definition.settlementText
+                        ? [{ label: '过层', value: definition.settlementText }]
                         : []),
                     { label: '占地', value: `${definition.footprintW}×${definition.footprintH}` },
                 ],

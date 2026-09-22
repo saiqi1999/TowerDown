@@ -27,7 +27,7 @@ import {
     HoverTargetScope,
 } from '../ui/hover/HoverInfoTypes';
 import { type HoverInfoController } from '../ui/hover/HoverInfoController';
-import { BuildingCategory } from './BuildingTypes';
+import { BuildingCategory, type ResourceCost } from './BuildingTypes';
 import { InteractionFeedbackView } from '../feedback/interaction/InteractionFeedbackView';
 import { InteractionFeedbackPresetId } from '../feedback/interaction/InteractionFeedbackConfig';
 
@@ -48,6 +48,7 @@ export class BuildingBlueprintCardView extends Component {
         onSelect: () => void,
         hover: HoverInfoController,
         brightnessMaterial: Material | null,
+        displayCost: ResourceCost = definition.cost,
     ): void {
         (this.node.getComponent(UITransform) ?? this.node.addComponent(UITransform))
             .setContentSize(BLUEPRINT_CARD_WIDTH, BLUEPRINT_CARD_HEIGHT);
@@ -90,7 +91,7 @@ export class BuildingBlueprintCardView extends Component {
         (costNode.getComponent(UITransform) ?? costNode.addComponent(UITransform)).setContentSize(62, 28);
         costNode.setPosition(0, -32, 0);
         const costLabel = costNode.getComponent(Label) ?? costNode.addComponent(Label);
-        costLabel.string = this.formatCost(definition);
+        costLabel.string = this.formatCost(displayCost);
         costLabel.fontSize = BLUEPRINT_CARD_COST_FONT_SIZE;
         costLabel.lineHeight = 13;
         costLabel.color = Color.BLACK;
@@ -125,10 +126,13 @@ export class BuildingBlueprintCardView extends Component {
                 title: definition.displayName,
                 subtitle: BuildingCategory[definition.category],
                 rows: [
-                    { label: '成本', value: this.formatCost(definition).replace('\n', '  ') || '无' },
+                    { label: '成本', value: this.formatCost(displayCost).replace('\n', '  ') || '无' },
                     { label: '占地', value: `${definition.footprintW}×${definition.footprintH}` },
                     ...(definition.shortEffectText
                         ? [{ label: '效果', value: definition.shortEffectText }]
+                        : []),
+                    ...(definition.settlementText
+                        ? [{ label: '过层', value: definition.settlementText }]
                         : []),
                 ],
             }),
@@ -169,7 +173,7 @@ export class BuildingBlueprintCardView extends Component {
         return child;
     }
 
-    private formatCost(definition: BuildingDefinition): string {
+    private formatCost(cost: ResourceCost): string {
         const names: Record<number, string> = {
             [ResourceType.Wood]: '木',
             [ResourceType.Stone]: '石',
@@ -177,9 +181,9 @@ export class BuildingBlueprintCardView extends Component {
             [ResourceType.Gold]: '金',
         };
         const parts: string[] = [];
-        for (const key of Object.keys(definition.cost)) {
+        for (const key of Object.keys(cost)) {
             const type = Number(key) as ResourceType;
-            const amount = definition.cost[type] ?? 0;
+            const amount = cost[type] ?? 0;
             if (amount > 0) parts.push(`${names[type] ?? '?'} ${amount}`);
         }
         return parts.length > 2
