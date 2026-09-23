@@ -53,6 +53,7 @@ export class WorldCommandController extends Component {
     private flagFrames: SpriteFrame[] = [];
     private readonly targetBySquad = new Map<string, string>();
     private readonly flagBySquad = new Map<string, TargetFlagView>();
+    private readonly queueFlagsBySquad = new Map<string, Map<string, TargetFlagView>>();
     private inputBlockedPredicate: (() => boolean) | null = null;
     private onBaseClicked: (() => void) | null = null;
     private onBaseFeedbackClick: ((objectId: string) => void) | null = null;
@@ -122,6 +123,10 @@ export class WorldCommandController extends Component {
         this.targetBySquad.clear();
         for (const flag of this.flagBySquad.values()) flag.hide();
         this.flagBySquad.clear();
+        for (const flags of this.queueFlagsBySquad.values()) {
+            for (const flag of flags.values()) flag.hide();
+        }
+        this.queueFlagsBySquad.clear();
     }
 
     update(): void {
@@ -133,6 +138,16 @@ export class WorldCommandController extends Component {
 
             this.targetBySquad.delete(squadId);
             this.flagBySquad.get(squadId)?.hide();
+            const queueFlags = this.queueFlagsBySquad.get(squadId);
+            queueFlags?.get(targetId)?.hide();
+            queueFlags?.delete(targetId);
+            const nextTargetId = handle?.brain.getCurrentTargetId() ?? null;
+            if (nextTargetId === null && queueFlags) {
+                for (const flag of queueFlags.values()) flag.hide();
+                this.queueFlagsBySquad.delete(squadId);
+            } else if (nextTargetId) {
+                this.targetBySquad.set(squadId, nextTargetId);
+            }
         }
     }
 
@@ -161,10 +176,12 @@ export class WorldCommandController extends Component {
         if (currentTargetId === objectId) {
             this.targetBySquad.delete(activeSquadId);
             this.flagBySquad.get(activeSquadId)?.hide();
+            this.hideQueueFlags(activeSquadId);
             handle.brain.clearCommandAndReturnHome();
             return;
         }
 
+        this.hideQueueFlags(activeSquadId);
         const result = handle.brain.issueTarget(objectId);
         if (!result.accepted) {
             console.warn(result.reason ?? `[WorldCommandController] command rejected: ${objectId}`);
@@ -225,7 +242,12 @@ export class WorldCommandController extends Component {
         const handle = squadId ? this.squadHandles.get(squadId) : null;
         if (!handle || ids.length === 0) return;
         const result = handle.brain.issueTargetQueue(ids);
-        if (!result.accepted) console.warn(result.reason ?? '[WorldCommandController] selection queue rejected.');
+        if (!result.accepted) {
+            console.warn(result.reason ?? '[WorldCommandController] selection queue rejected.');
+        } else {
+            this.targetBySquad.set(squadId!, ids[0]!);
+            this.showQueueFlags(squadId!, ids);
+        }
     }
 
     private isViewInSelection(view: WorldObjectView): boolean {
@@ -274,5 +296,36 @@ export class WorldCommandController extends Component {
         flag.setup(this.flagFrames, tint);
         this.flagBySquad.set(squadId, flag);
         return flag;
+    }
+
+    private showQueueFlags(squadId: string, targetIds: readonly string[]): void {
+        this.hideQueueFlags(squadId);
+        if (!this.commandRoot) return;
+        const flags = new Map<string, TargetFlagView>();
+        const tint = this.squadPresentationById.get(squadId)?.commandColor;
+        for (const targetId of targetIds) {
+            const target = this.worldObjectRegistry?.get(targetId);
+            if (!target) continue;
+            const node = new Node(`QueuedTargetFlag_${squadId}_${targetId}`);
+            node.setParent(this.commandRoot);
+            node.layer = this.commandRoot.layer;
+            const flag = node.addComponent(TargetFlagView);
+            flag.setup(this.flagFrames, tint);
+            flag.showAtObject(
+                target,
+                getWorldVisualDefinition(target.visualId),
+                this.mapWidth,
+                this.mapHeight,
+            );
+            flags.set(targetId, flag);
+        }
+        this.queueFlagsBySquad.set(squadId, flags);
+    }
+
+    private hideQueueFlags(squadId: string): void {
+        const flags = this.queueFlagsBySquad.get(squadId);
+        if (!flags) return;
+        for (const flag of flags.values()) flag.hide();
+        this.queueFlagsBySquad.delete(squadId);
     }
 }
