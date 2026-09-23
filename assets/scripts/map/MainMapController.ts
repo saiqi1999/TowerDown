@@ -47,7 +47,7 @@ import { WorldObjectRuntimeRegistry } from '../world/WorldObjectRuntimeRegistry'
 import { STATIC_WORLD_OBJECTS } from '../world/StaticWorldObjects';
 import { MapRenderer } from './MapRenderer';
 import { STATIC_MAP } from './StaticMap';
-import { TERRAIN_SPRITE_FRAME_FALLBACK_UUID, TERRAIN_SPRITE_FRAME_UUID } from './TerrainAtlas';
+import { TERRAIN_SPRITE_FRAME_UUID } from './TerrainAtlas';
 import { ResourceHudView } from '../ui/ResourceHudView';
 import { MonsterGroupRenderer } from '../monster/MonsterGroupRenderer';
 import { STATIC_MONSTER_GROUPS } from '../monster/StaticMonsterGroups';
@@ -780,25 +780,16 @@ export class MainMapController extends Component {
 
     private loadAtlasSpriteFrame(): Promise<SpriteFrame> {
         return new Promise((resolve, reject) => {
-            const tryLoad = (uuid: string, next?: () => void): void => {
-                assetManager.loadAny<SpriteFrame>(uuid, (error, asset) => {
-                    if (!error && asset) {
-                        resolve(asset);
+            assetManager.loadAny<SpriteFrame>(
+                TERRAIN_SPRITE_FRAME_UUID,
+                (error, asset) => {
+                    if (error || !asset) {
+                        reject(error ?? new Error('Failed to load terrain2 sprite frame.'));
                         return;
                     }
-
-                    if (next) {
-                        next();
-                        return;
-                    }
-
-                    reject(error ?? new Error('Failed to load terrain sprite frame.'));
-                });
-            };
-
-            tryLoad(TERRAIN_SPRITE_FRAME_UUID, () => {
-                tryLoad(TERRAIN_SPRITE_FRAME_FALLBACK_UUID);
-            });
+                    resolve(asset);
+                },
+            );
         });
     }
 

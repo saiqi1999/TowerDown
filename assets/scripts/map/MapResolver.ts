@@ -1,51 +1,56 @@
+/**
+ * Why this file exists:
+ * 每个地形格需要根据自身类型和四邻接地形选择正确的视觉瓦片。
+ *
+ * Ownership boundary:
+ * 本文件拥有 TerrainMap 到 TileVisual 的纯解析规则，并处理地图外边界。
+ *
+ * This file deliberately does NOT:
+ * 不加载图集、不创建 Sprite、不修改 TerrainMap，也不做对角线拼接。
+ */
 import { TerrainType, TileVisual, type TerrainMap } from './MapTypes';
 
 export class MapResolver {
     public resolve(map: TerrainMap, x: number, y: number): TileVisual {
         const terrain = map[y]?.[x];
-        if (terrain !== TerrainType.Dirt) {
-            return TileVisual.Grass;
+        if (terrain !== TerrainType.Grass) {
+            return TileVisual.DirtCenter;
         }
 
-        const top = this.isDirt(map, x, y - 1);
-        const right = this.isDirt(map, x + 1, y);
-        const bottom = this.isDirt(map, x, y + 1);
-        const left = this.isDirt(map, x - 1, y);
-
-        const missingTop = !top;
-        const missingRight = !right;
-        const missingBottom = !bottom;
-        const missingLeft = !left;
+        const missingTop = !this.isGrass(map, x, y - 1);
+        const missingRight = !this.isGrass(map, x + 1, y);
+        const missingBottom = !this.isGrass(map, x, y + 1);
+        const missingLeft = !this.isGrass(map, x - 1, y);
 
         if (missingTop && missingLeft) {
-            return TileVisual.DirtTopLeft;
+            return TileVisual.GrassTopLeft;
         }
         if (missingTop && missingRight) {
-            return TileVisual.DirtTopRight;
+            return TileVisual.GrassTopRight;
         }
         if (missingBottom && missingLeft) {
-            return TileVisual.DirtBottomLeft;
+            return TileVisual.GrassBottomLeft;
         }
         if (missingBottom && missingRight) {
-            return TileVisual.DirtBottomRight;
+            return TileVisual.GrassBottomRight;
         }
         if (missingTop) {
-            return TileVisual.DirtTop;
+            return TileVisual.GrassTop;
         }
         if (missingBottom) {
-            return TileVisual.DirtBottom;
+            return TileVisual.GrassBottom;
         }
         if (missingLeft) {
-            return TileVisual.DirtLeft;
+            return TileVisual.GrassLeft;
         }
         if (missingRight) {
-            return TileVisual.DirtRight;
+            return TileVisual.GrassRight;
         }
 
-        return TileVisual.DirtCenter;
+        return TileVisual.GrassCenter;
     }
 
-    private isDirt(map: TerrainMap, x: number, y: number): boolean {
-        return map[y]?.[x] === TerrainType.Dirt;
+    private isGrass(map: TerrainMap, x: number, y: number): boolean {
+        return map[y]?.[x] === TerrainType.Grass;
     }
 }
