@@ -38,6 +38,17 @@ const ATLAS_CELLS: Record<TileVisual, AtlasCell> = {
     [TileVisual.GrassBottomLeft]: { column: 2, row: 34 },
     [TileVisual.GrassBottom]: { column: 3, row: 34 },
     [TileVisual.GrassBottomRight]: { column: 4, row: 34 },
+    [TileVisual.PitNorthWallUpper]: { column: 4, row: 2 },
+    [TileVisual.PitNorthWallLower]: { column: 4, row: 3 },
+    [TileVisual.PitSouthRim]: { column: 4, row: 0 },
+    [TileVisual.PitWestRim]: { column: 8, row: 1 },
+    [TileVisual.PitEastRim]: { column: 0, row: 1 },
+    [TileVisual.PitNorthWestUpper]: { column: 3, row: 27 },
+    [TileVisual.PitNorthWestLower]: { column: 3, row: 28 },
+    [TileVisual.PitNorthEastUpper]: { column: 2, row: 27 },
+    [TileVisual.PitNorthEastLower]: { column: 2, row: 28 },
+    [TileVisual.PitSouthWest]: { column: 3, row: 25 },
+    [TileVisual.PitSouthEast]: { column: 2, row: 25 },
 };
 
 export function getAtlasCell(visual: TileVisual): AtlasCell {

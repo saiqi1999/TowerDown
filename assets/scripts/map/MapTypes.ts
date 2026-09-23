@@ -24,6 +24,17 @@ export enum TileVisual {
     GrassTopRight = 'GrassTopRight',
     GrassBottomLeft = 'GrassBottomLeft',
     GrassBottomRight = 'GrassBottomRight',
+    PitNorthWallUpper = 'PitNorthWallUpper',
+    PitNorthWallLower = 'PitNorthWallLower',
+    PitSouthRim = 'PitSouthRim',
+    PitWestRim = 'PitWestRim',
+    PitEastRim = 'PitEastRim',
+    PitNorthWestUpper = 'PitNorthWestUpper',
+    PitNorthWestLower = 'PitNorthWestLower',
+    PitNorthEastUpper = 'PitNorthEastUpper',
+    PitNorthEastLower = 'PitNorthEastLower',
+    PitSouthWest = 'PitSouthWest',
+    PitSouthEast = 'PitSouthEast',
 }
 
 export type TerrainMap = TerrainType[][];
