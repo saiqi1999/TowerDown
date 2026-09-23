@@ -186,3 +186,190 @@ private loadAtlasSpriteFrame(): Promise<SpriteFrame> {
 4. 检查底边取 row=34，没有取到 row=33 或左侧透明区；检查顶底、左右没有颠倒。
 5. 检查现有静态地图上的草泥边界，记录九宫格无法表达的凹角，不能用错误的凸角声称已解决。
 6. 确认无旧 fallback 引用、类型检查通过、每格仍为 32×32。新图片加载失败时明确报错。
+
+
+## 9. 下一步：使用同图集绘制世界外沿悬崖
+
+基于已推送的 `c19b232`。第 1～8 节的换图已完成，本节是新增待实施步骤。只修改现有 `MapTypes.ts`、`TerrainAtlas.ts`、`MapRenderer.ts` 三个脚本；不新增文件、图片、组件或场景层级。
+
+### 9.1 显示规则
+
+沿现有矩形地图外侧补画装饰瓦片：上方 1 行、左右各 1 列、下方 2 行。原地图内容和坐标不移动、不扩容。
+
+同一平台素材在俯视角下，上沿是窄崖沿，左右是侧沿，下方才有完整可见岩壁。使用其原始方向，不旋转底部岩壁冒充另外三面，以保持光线和透视一致。
+
+这是有限宽度的悬崖边界，不是无限背景填充。外沿之后以及素材透明角以外仍可见背景；当前镜头允许 overscroll=48、最小缩放 0.85，一格宽边界不能保证视口中完全没有黑色。本步不修改相机限制。
+
+### 9.2 原图取块位置
+
+只使用 terrain2 左上角矩形平台的 9 列×4 行区域，源范围 x=0～287、y=0～127。全部切片为 32×32，按 PNG 左上为原点，不使用下方斜坡形状，也不使用草坪区域。
+
+| 新 TileVisual | column,row | 像素 x,y | 放置用途 |
+| --- | --- | --- | --- |
+| CliffTopLeft | 0,0 | 0,0 | 左上外角 |
+| CliffTop | 4,0 | 128,0 | 上沿重复块 |
+| CliffTopRight | 8,0 | 256,0 | 右上外角 |
+| CliffLeft | 0,1 | 0,32 | 左侧重复块 |
+| CliffRight | 8,1 | 256,32 | 右侧重复块 |
+| CliffBottomLeftUpper | 0,2 | 0,64 | 下方第一行左角 |
+| CliffBottomUpper | 4,2 | 128,64 | 下方第一行岩壁 |
+| CliffBottomRightUpper | 8,2 | 256,64 | 下方第一行右角 |
+| CliffBottomLeftLower | 0,3 | 0,96 | 下方第二行左角 |
+| CliffBottomLower | 4,3 | 128,96 | 下方第二行岩壁 |
+| CliffBottomRightLower | 8,3 | 256,96 | 下方第二行右角 |
+
+已按 32px 网格查看原图：第 0 行是顶沿，第 1 行是平面侧沿，第 2、3 行是正面岩壁。Upper/Lower 是同一岩壁连续的两段，不可互换或将一段拉伸两倍高。侧边和角保留原图透明像素。
+
+这些坐标对应真实素材区域；重复中心列后接缝的美术效果仍需运行验收，不能仅凭坐标正确就认定无缝。若有明显纹理断口，仅在这片矩形平台内调整重复列或采用连续列循环，不变更边界生成逻辑。
+
+### 9.3 修改 MapTypes.ts：只扩充 TileVisual
+
+在现有枚举末尾添加第 9.2 节的 11 个名字，每个字符串值与名字相同，例如：
+
+```ts
+CliffTopLeft = 'CliffTopLeft',
+CliffTop = 'CliffTop',
+// 其余按表补齐
+```
+
+TerrainType 不新增 Cliff，TerrainMap 不变。悬崖是外部显示节点，不进入逻辑地形枚举。
+
+### 9.4 修改 TerrainAtlas.ts：补充 ATLAS_CELLS
+
+保持现有 10 个泥地/草地映射原样，在同一个表中追加：
+
+```ts
+[TileVisual.CliffTopLeft]: { column: 0, row: 0 },
+[TileVisual.CliffTop]: { column: 4, row: 0 },
+[TileVisual.CliffTopRight]: { column: 8, row: 0 },
+[TileVisual.CliffLeft]: { column: 0, row: 1 },
+[TileVisual.CliffRight]: { column: 8, row: 1 },
+[TileVisual.CliffBottomLeftUpper]: { column: 0, row: 2 },
+[TileVisual.CliffBottomUpper]: { column: 4, row: 2 },
+[TileVisual.CliffBottomRightUpper]: { column: 8, row: 2 },
+[TileVisual.CliffBottomLeftLower]: { column: 0, row: 3 },
+[TileVisual.CliffBottomLower]: { column: 4, row: 3 },
+[TileVisual.CliffBottomRightLower]: { column: 8, row: 3 },
+```
+
+getAtlasCell()、getAtlasRect()、图片 UUID、切片尺寸保持不变。Record<TileVisual, AtlasCell> 会在编译时要求新枚举的坐标齐全。
+
+### 9.5 修改 MapRenderer.ts：复用已有节点创建过程
+
+#### A. 抽取 createTile()，避免复制原 render() 中的 Sprite 设置
+
+在同一个类中新增方法，不新建脚本：
+
+```ts
+private createTile(
+    visual: TileVisual,
+    x: number,
+    y: number,
+    columns: number,
+    rows: number,
+    prefix: string,
+): void {
+    const tileNode = new Node(`${prefix}_${x}_${y}`);
+    tileNode.setParent(this.tileRoot);
+    tileNode.layer = this.tileRoot.layer;
+    tileNode.setPosition(gridCellToWorldCenter(x, y, columns, rows));
+
+    const transform = tileNode.addComponent(UITransform);
+    transform.setContentSize(GRID_RENDER_SIZE, GRID_RENDER_SIZE);
+
+    const sprite = tileNode.addComponent(Sprite);
+    sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+    sprite.spriteFrame = this.getOrCreateFrame(visual);
+}
+```
+
+这是将原有逐格渲染代码移入方法，行为不变。不添加按钮、碰撞器或输入监听。
+
+#### B. 新增 renderCliffBoundary(columns, rows)
+
+```ts
+private renderCliffBoundary(columns: number, rows: number): void {
+    const put = (visual: TileVisual, x: number, y: number): void => {
+        this.createTile(visual, x, y, columns, rows, 'Cliff');
+    };
+
+    // 上沿：不包括角，角单独画一次。
+    put(TileVisual.CliffTopLeft, -1, -1);
+    for (let x = 0; x < columns; x += 1) {
+        put(TileVisual.CliffTop, x, -1);
+    }
+    put(TileVisual.CliffTopRight, columns, -1);
+
+    // 左右沿：只覆盖原地图的行。
+    for (let y = 0; y < rows; y += 1) {
+        put(TileVisual.CliffLeft, -1, y);
+        put(TileVisual.CliffRight, columns, y);
+    }
+
+    // 正面岩壁：连续两行，包含各自左右角。
+    put(TileVisual.CliffBottomLeftUpper, -1, rows);
+    put(TileVisual.CliffBottomLeftLower, -1, rows + 1);
+    for (let x = 0; x < columns; x += 1) {
+        put(TileVisual.CliffBottomUpper, x, rows);
+        put(TileVisual.CliffBottomLower, x, rows + 1);
+    }
+    put(TileVisual.CliffBottomRightUpper, columns, rows);
+    put(TileVisual.CliffBottomRightLower, columns, rows + 1);
+}
+```
+
+外部坐标可直接使用现有 gridCellToWorldCenter()：它只是位置换算，没有数组索引或边界截断。**传入的 columns/rows 始终是原地图尺寸**，不要改成 columns+2、rows+3，否则原地图与建筑会错位。
+
+#### C. 修改 render(map)
+
+```ts
+public render(map: TerrainMap): void {
+    this.clear();
+    const rows = map.length;
+    const columns = map[0]?.length ?? 0;
+    if (rows === 0 || columns === 0) return;
+
+    this.renderCliffBoundary(columns, rows);
+    for (let y = 0; y < rows; y += 1) {
+        for (let x = 0; x < columns; x += 1) {
+            const visual = this.resolver.resolve(map, x, y);
+            this.createTile(visual, x, y, columns, rows, 'Tile');
+        }
+    }
+}
+```
+
+先画外沿，再画地表。它们在同一 TileRoot 内，使用同一 layer 和 SpriteFrame 缓存。格子不重叠，不需要引入额外排序系统。
+
+#### D. clear() / getOrCreateFrame()
+
+getOrCreateFrame() 保持现有方法不变，新 visual 自动走同一裁切缓存。
+
+clear() 原来仅 removeAllChildren；本次会反复创建额外边界节点，改为销毁该 renderer 专用 TileRoot 下的旧瓦片，避免只脱离但不销毁：
+
+```ts
+public clear(): void {
+    for (const child of [...this.tileRoot.children]) {
+        child.removeFromParent();
+        child.destroy();
+    }
+}
+```
+
+TileRoot 当前只承载地图瓦片；不要将其他交互节点放入其中。先脱离再销毁避免延迟销毁导致当帧重叠。普通重绘保留 frameCache，不在每次 clear 时销毁贴图。
+
+### 9.6 本轮保持不变的 tile 调用
+
+- MapResolver 仍只负责原地图内 Grass/Dirt 解析，不在它里面访问负坐标或返回 Cliff。
+- MainMapController 原 new MapRenderer 与 render(STATIC_MAP) 调用不改。
+- 原 STATIC_MAP 行列数不变，不能补 Cliff 到地图数组。
+- GridTransform 不改，世界原点不移动。
+
+### 9.7 验收
+
+1. 原图为 W×H 时，外沿节点数是 3W+2H+6。当前 40×23 地图应新增 172 个 Cliff 节点，总瓦片节点 1092；四角不能重复。
+2. 上方 y=-1、两侧 x=-1/W、下方 y=H/H+1 全部有对应方向素材，底部两行顺序正确。
+3. 原 Tile_0_0、基地及建筑位置与修改前完全相同；外沿没有成为可建造/可行走格。
+4. 平移和缩放地图，检查外沿随 MapRoot 一起移动；TileRoot 及父节点如有 Mask 导致外沿被裁切，先定位现有遮罩，不通过扩大逻辑地图修复。
+5. 检查上下左右的重复接缝、四角与直边连接；岩壁没有上下倒置或非等比拉伸。底部之外的背景仍属于本次边界范围外。
+6. 连续 render 两次，节点数量不翻倍；类型检查通过，无缺失的 TileVisual 映射。
