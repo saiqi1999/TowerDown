@@ -164,3 +164,220 @@
 - Tiled Terrain Sets：https://docs.mapeditor.org/en/latest/manual/terrain/ （边、角、混合型地形标签）
 - Tiled Automapping：https://docs.mapeditor.org/en/latest/manual/automapping/ （规则驱动的地形装饰）
 - WaveFunctionCollapse 原项目：https://github.com/mxgmn/WaveFunctionCollapse （候选、传播与约束矛盾）
+
+## 9. 可执行技术细案：将当前瓦片管线切换到 terrain2
+
+本节于 2026-09-23 基于远端 `c44bde1` 重新核对。**本节替代第 4 节中尚未确定的首版实施选择**；第 3、5、6 节仍分别作为美术规范、提示词和后续扩展。第一阶段必须实际默认显示新图，而不是仅增加配置但继续显示旧图。
+
+### 9.1 确定交付边界
+
+首版从 terrain2 中裁出两块完全不透明的平面纹理，显示现有 Dirt/Grass 地图。旧九宫格边缘在新 profile 下统一映射为新泥地中心，形成方格硬边交界。这是明确的阶段效果：已经换用新图，但不宣称已完成自然地表过渡或无缝美术验收。连续纹理是否存在视觉重复还要看拼接画面。
+
+不在这一提交中展示悬崖：当前 Dirt/Grass 边界不是高度或不可通行边界，把悬崖画在那里会让部队看起来穿过峭壁。完整高台地形需要独立的高度/边界设计，属于下一阶段。
+
+### 9.2 精确裁切数据
+
+源 PNG 坐标原点为左上，x 向右、y 向下；rect 为左闭右开。
+
+| 新 visual 实际取图 | x | y | width | height | 用途 |
+| --- | --- | --- | --- | --- | --- |
+| Grass | 80 | 1040 | 32 | 32 | 底部中间草坪的内部区域 |
+| 全部 Dirt visual | 32 | 16 | 32 | 32 | 顶部左侧高台的纯顶面区域，不包含崖沿和侧壁 |
+
+已经用实际 PNG 核对以上两块 alpha 全部为 255。泥地切片含 `#948E77/#929581/#8C7D63`，草地含 `#6E8C45/#7F9454`。这证明它们可填满格子，不证明它们已经通过美术连续性验收。禁止使用 `(32,1056,32,32)` 作为草地：那里是透明区域。
+
+### 9.3 文件改动总表
+
+| 文件 | 操作 | 方法/声明 |
+| --- | --- | --- |
+| `assets/scripts/map/TerrainAtlas.ts` | 修改 | 新增 profile 类型、配置、加载顺序；替换 `getAtlasRect()`，删除 `getAtlasCell()` 等旧导出 |
+| `assets/scripts/map/MapRenderer.ts` | 修改 | constructor、getOrCreateFrame、clear；新增 destroy；render 主循环不变 |
+| `assets/scripts/map/MainMapController.ts` | 修改 | bootstrap、loadAtlasSpriteFrame（改名）、onDestroy；新增单资源加载和校验方法 |
+| `assets/art/terrain/terrain2.png.meta` | 修改 | nearest、禁用 packable、关闭自动裁边；保留 UUID |
+| `assets/scripts/map/MapResolver.ts` | 保留 | resolve/isDirt 无改动 |
+| `assets/scripts/map/MapTypes.ts` | 保留 | TerrainType/TileVisual/TerrainMap 无改动 |
+| `assets/scripts/grid/GridConfig.ts` | 保留 | 源 16、倍率 2、世界格 32 无改动 |
+| `tests/terrain-atlas.cjs` | 新增 | profile 覆盖、裁切范围与 resolver 输出兼容测试，沿用项目已有 CJS 测试风格 |
+
+所有改动过的旧符号都要全仓搜索清理；不要同时保留两套决定“当前图集”的全局常量。新增 TS 文件须满足根目录 AGENTS.md 的文件头要求；本方案不需要新增 TS 模块。
+
+### 9.4 `TerrainAtlas.ts`：统一图集配置入口
+
+保留 `AtlasRect`，删除 `AtlasCell`、`ATLAS_TILE_SIZE`、`TILE_RENDER_SIZE`、`ATLAS_CELLS`、`getAtlasCell()`，以及两个裸 UUID 导出。当前这些导出没有其他独立使用者，旧 `getAtlasRect()` 只被 MapRenderer 调用。
+
+新增如下类型和方法，profile id 使用有限联合类型避免拼写错误：
+
+```ts
+export type TerrainAtlasProfileId = 'terrain2-flat' | 'legacy' | 'legacy-fallback';
+export interface TerrainAtlasProfile {
+    readonly id: TerrainAtlasProfileId;
+    readonly spriteFrameUuid: string;
+    readonly rects: Readonly<Record<TileVisual, Readonly<AtlasRect>>>;
+}
+
+export const DEFAULT_TERRAIN_ATLAS_PROFILE_ID: TerrainAtlasProfileId = 'terrain2-flat';
+
+export function getTerrainAtlasProfile(id: TerrainAtlasProfileId): TerrainAtlasProfile;
+export function getTerrainAtlasLoadOrder(
+    preferredId: TerrainAtlasProfileId,
+): readonly TerrainAtlasProfile[];
+export function getAtlasRect(
+    profile: TerrainAtlasProfile,
+    visual: TileVisual,
+): Readonly<AtlasRect>;
+```
+
+`getTerrainAtlasProfile()` 从模块内部 `PROFILES` 取配置；`getAtlasRect()` 直接返回 `profile.rects[visual]`，缺项抛包含 profile id 与 visual 的异常，禁止隐式取旧图坐标。
+
+`getTerrainAtlasLoadOrder()` 的明确规则：terrain2-flat → legacy → legacy-fallback；选择 legacy 时只走 legacy → legacy-fallback；选择 legacy-fallback 时只加载自身。方便对照旧外观，也避免回退循环。
+
+新 profile 的 rects 必须显式覆盖所有十个 TileVisual：
+
+```ts
+const dirt32 = { x: 32, y: 16, width: 32, height: 32 } as const;
+const terrain2Rects: Record<TileVisual, Readonly<AtlasRect>> = {
+    [TileVisual.Grass]: { x: 80, y: 1040, width: 32, height: 32 },
+    [TileVisual.DirtCenter]: dirt32,
+    [TileVisual.DirtTop]: dirt32,
+    [TileVisual.DirtBottom]: dirt32,
+    [TileVisual.DirtLeft]: dirt32,
+    [TileVisual.DirtRight]: dirt32,
+    [TileVisual.DirtTopLeft]: dirt32,
+    [TileVisual.DirtTopRight]: dirt32,
+    [TileVisual.DirtBottomLeft]: dirt32,
+    [TileVisual.DirtBottomRight]: dirt32,
+};
+```
+
+新 profile UUID：`0ca7c1ca-86e7-4aba-9a38-521cfec5c983@f9941`。legacy UUID：`d7fe297d-ca47-49aa-93d4-0c947fdf5ebc@f9941`。legacy-fallback UUID：`165f2715-1733-4ccf-94bc-6cc30740bac2@f9941`。
+
+两套 legacy 保持原来的 16px 表：Grass=(48,176,16,16)；泥地九宫格 x=0/16/32、y=112/128/144，与原枚举位置对应。可以共享 readonly rects，因为原加载器就是同坐标回退；最终应启动验证备用图仍能正确显示。
+
+### 9.5 `MainMapController.ts`：加载结果必须携带 profile
+
+替换 TerrainAtlas import，导入 `DEFAULT_TERRAIN_ATLAS_PROFILE_ID`、`getTerrainAtlasLoadOrder`、`TerrainAtlasProfile`；已有 SpriteFrame、assetManager import 继续使用。新增文件内接口：
+
+```ts
+interface LoadedTerrainAtlas {
+    readonly profile: TerrainAtlasProfile;
+    readonly spriteFrame: SpriteFrame;
+}
+```
+
+**删除旧 `loadAtlasSpriteFrame()`，新增三个方法：**
+
+1. `loadTerrainSpriteFrame(uuid: string): Promise<SpriteFrame>`：只将 `assetManager.loadAny<SpriteFrame>()` 包装成 Promise，不负责决定 fallback。不成功则 reject，包括 error 为空但 asset 为空的情况。
+2. `validateTerrainAtlas(profile, frame): void`：遍历 `Object.values(TileVisual)`，验证所有 rect 为整数、非负起点、正宽高，且不越过 frame.texture.width/height；检查 frame.texture 有效。terrain2-flat 额外检查原纹理尺寸为 576×1120。校验全图 frame 未旋转、rect 原点为 0、范围为全纹理，防止裁图或动态合图使坐标失效。失败 throw 带 profile id 的 Error。需从 MapTypes 导入 TileVisual。
+3. `loadTerrainAtlas(): Promise<LoadedTerrainAtlas>`：依次尝试完整 profile；加载成功且校验通过才返回；某项失败继续下一 profile 并 warn；全部失败抛错，不能挂起 Promise。
+
+参考主体：
+
+```ts
+private async loadTerrainAtlas(): Promise<LoadedTerrainAtlas> {
+    const profiles = getTerrainAtlasLoadOrder(DEFAULT_TERRAIN_ATLAS_PROFILE_ID);
+    const failures: string[] = [];
+    for (const profile of profiles) {
+        try {
+            const spriteFrame = await this.loadTerrainSpriteFrame(profile.spriteFrameUuid);
+            this.validateTerrainAtlas(profile, spriteFrame);
+            console.info(`[TerrainAtlas] active=${profile.id}`);
+            return { profile, spriteFrame };
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            failures.push(`${profile.id}: ${reason}`);
+            console.warn(`[TerrainAtlas] ${profile.id} failed: ${reason}`);
+        }
+    }
+    throw new Error(`[TerrainAtlas] All profiles failed: ${failures.join('; ')}`);
+}
+```
+
+**修改 `bootstrap()` 两处：**
+
+```ts
+// 原：const atlasSpriteFrame = await this.loadAtlasSpriteFrame();
+const terrainAtlas = await this.loadTerrainAtlas();
+// 异步加载后若当前组件/节点已经销毁，停止后续初始化；
+// 使用本项目 cc.isValid(this.node) 检查并正确导入 isValid。
+
+// 原：new MapRenderer(tileRoot, atlasSpriteFrame)
+this.mapRenderer = new MapRenderer(
+    tileRoot, terrainAtlas.spriteFrame, terrainAtlas.profile,
+);
+this.mapRenderer.render(STATIC_MAP);
+```
+
+bootstrap 后面还有其他 await；在最终创建场景节点之前也检查 isValid，不能只在第一次 await 后检查。沿用项目已有 start/bootstrap 错误处理风格，但要确保最终加载失败能打印，不能吞掉异常。不要在 load 方法内写 this.mapRenderer 或更改游戏状态。
+
+**修改 `onDestroy()`：** 在现有 baseInteraction 清理后追加 `this.mapRenderer?.destroy(); this.mapRenderer = null;`。渲染器只释放自己创建的切片和节点，不释放 assetManager 的共享整图。
+
+### 9.6 `MapRenderer.ts`：从注入 profile 取切片
+
+导入 TerrainAtlasProfile；删除对任何裸图集 UUID 的依赖（当前没有，保持这一边界）。
+
+**constructor** 增加第三个只读参数 `private readonly atlasProfile: TerrainAtlasProfile`。一个 renderer 的生命周期内只使用一套 profile，切换 profile 时销毁旧 renderer、重新创建；这样原 `Map<TileVisual, SpriteFrame>` 缓存仍正确，不需要另一套全局缓存。
+
+**getOrCreateFrame(visual)** 唯一裁切来源改为：
+
+```ts
+const rect = getAtlasRect(this.atlasProfile, visual);
+const frame = new SpriteFrame();
+frame.texture = this.atlasSpriteFrame.texture;
+frame.rect = new Rect(rect.x, rect.y, rect.width, rect.height);
+frame.originalSize = new Size(rect.width, rect.height);
+frame.offset = new Vec2(0, 0);
+frame.rotated = false;
+frame.packable = false;
+this.frameCache.set(visual, frame);
+```
+
+其余缓存命中逻辑不变。禁止在这里根据 Grass/Dirt 再硬编码一次坐标；新增过渡只修改 profile 表。
+
+**render(map)** 保留原 `resolver.resolve()`、`gridCellToWorldCenter()`、节点 layer、Sprite CUSTOM、UITransform 大小 `GRID_RENDER_SIZE`。新切片 32→32，旧切片 16→32；不能把世界格扩大一倍，不能把地图高度偏移一半。没有新装饰层或悬崖层需求，不新增场景节点层级。
+
+**clear()** 当前只 removeAllChildren，会脱离节点但不销毁。修改为仅销毁本 renderer 创建并记录的 tile 节点：新增 `private readonly tileNodes: Node[] = []`；render 创建节点后 push；clear 遍历时先从父节点移除、再 destroy，最后清空数组。避免延迟销毁导致本帧重绘同时显示两套格子，也不误删 TileRoot 未来的其他子节点。
+
+**新增 destroy(): void**：调用 clear；对 frameCache 中每个运行时创建的 SpriteFrame 调用 destroy；clear cache。方法可重复调用。不要 destroy `atlasSpriteFrame` 或 texture，它们是共享资源。
+
+### 9.7 不改动的业务接口与原因
+
+- `MapResolver.resolve(map,x,y)` 仍返回现有 TileVisual。它判断逻辑地形邻接；profile 决定每种邻接怎么画，两者职责分开。
+- `TerrainType.Dirt` 不重命名为 Cliff/Paving；地面外观不参与资源收益、建筑 allowedTerrain 或 idle 目标筛选。
+- `GRID_SOURCE_SIZE=16` 不改；本轮只移除 TerrainAtlas 对它的依赖。全局世界格仍为 32，建筑 64=2×2、128=4×4，单位位置、拖动幽灵、鼠标投影均不改。
+- `StaticMap.ts` 不改布局；楼层过渡控制器无需重新创建 terrain renderer。当前换层使用相同地形，仅刷新对象。
+- 建筑自身已经烘焙的地板不会随本补丁自动变色；不要在地形渲染器中篡改建筑图。按本文美术模板后续替换。
+
+### 9.8 导入设置与资源生命周期
+
+在 Creator 3.8.8 导入设置中将 terrain2 minfilter/magfilter 改 nearest、mipfilter 保持 none；spriteFrame 关闭 packable，保持整图 rect 和无旋转，关闭自动裁透明边。保存编辑器产出的 meta，保留图片 UUID 和两个子资源 UUID。不要修改图片尺寸或重新导入生成新 UUID。
+
+运行时生成的切片也必须 `packable=false`；只改源 spriteFrame 不足以说明所有派生 frame 都不会合图。旧图回退仍按原采样设置显示，如需要把旧图也禁用自动合图，应单独注明 meta 变更目的。
+
+### 9.9 验证步骤与明确失败标准
+
+**静态检查：**
+
+```sh
+rg -n 'loadAtlasSpriteFrame|TERRAIN_SPRITE_FRAME_UUID|TERRAIN_SPRITE_FRAME_FALLBACK_UUID|ATLAS_TILE_SIZE|TILE_RENDER_SIZE|getAtlasCell' assets/scripts
+rg -n 'getAtlasRect|new MapRenderer|loadTerrainAtlas' assets/scripts
+```
+
+第一条在生产脚本应无结果；第二条应只有统一实现及对应调用。通过项目 TypeScript 检查；不能仅靠文本替换判断编译正确。
+
+**自动测试 `tests/terrain-atlas.cjs`：** 参考现有 `tests/building-relocation.cjs` 的 TS 转译方式。测试所有 profile 覆盖十个 visual，两个新 rect 精确匹配本方案，legacy 坐标未变，fallback 顺序正确。对 STATIC_MAP 每格运行真实 resolver，输出必能在所选 profile 中找到 rect。尺寸/越界校验应覆盖负坐标、缺项、贴图过小。若校验仍为 controller 私有方法，这些错误路径通过实际加载验证，不为了测试复制一份实现。
+
+**Creator 实机：**
+
+1. 正常启动日志 active=terrain2-flat；Grass 为新草地，Dirt 为浅灰褐顶面；无旧九宫格边线、透明洞、崖壁或黑块。
+2. 检查地图左上/右下坐标与建筑格点对齐，基地仍 4×4，兵营等仍 2×2；鼠标点选/拖动落点一致。
+3. 测试单位穿越两种地表、泥地 idle 和绕建筑寻路；游戏行为与改图前相同。
+4. 临时在开发配置使用无效新 UUID：应落到 legacy，且使用旧 rect，不能仍以 32px 裁旧图；测试结束还原。
+5. 临时给新 rect 设置越界：加载校验应拦截并回退，不能渲染半张地图；全部 UUID 无效时应明确报错。
+6. 同 renderer 连续 render 两次，节点数量等于地图格数，无重复显示；退出场景后切片释放，无访问已销毁节点的异常。
+7. 1×、2×和常用镜头缩放检查最近邻采样；非整数镜头缩放可能有像素粗细变化，不应误诊为线性采样。
+
+**完成定义：** 新图为默认、回退成套正确、无悬空旧接口、玩法格子完全一致、通过上述运行验证。此时可交付“新图平面换装”，不能写成“完整悬崖自动拼接已经完成”。
+
+### 9.10 后续升级接口约束
+
+补齐自然过渡后只扩展新 profile 的 rects；若实际需要比十种 TileVisual 更多的内角/孤岛，再一次性扩展 MapTypes、MapResolver 与所有 profile（包括旧图的明确降级映射）。不得只扩展 enum 导致回退缺项。WFC、地面独立层和悬崖渲染继续按第 6 节单独实现，不加进这次最小换装提交。
