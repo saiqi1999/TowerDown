@@ -1,3 +1,13 @@
+/**
+ * Why this file exists:
+ * 队伍需要把单目标命令和连续目标命令统一编排成可中断、可恢复的执行状态机。
+ *
+ * Ownership boundary:
+ * 本文件拥有当前目标、待执行目标队列以及移动、战斗、采集和回城状态转换。
+ *
+ * This file deliberately does NOT:
+ * 不处理输入绘制、不计算局部战斗站位、不直接执行资源扣除或伤害。
+ */
 import { _decorator, Component, randomRange } from 'cc';
 import { type GridCell } from '../navigation/NavigationTypes';
 import { WorldNavigator } from '../navigation/WorldNavigator';
@@ -53,6 +63,7 @@ export class SquadBrain extends Component {
     private activeTargetId: string | null = null;
     private pendingTargetId: string | null = null;
     private pendingReturnHome = false;
+    private queuedTargetIds: string[] = [];
     private idleTimer = 0;
     private motor!: SquadMotor;
     private engagement!: SquadEngagementController;
@@ -107,6 +118,26 @@ export class SquadBrain extends Component {
     }
 
     public issueTarget(targetId: string): CommandResult {
+        this.queuedTargetIds = [];
+        return this.issueNextTarget(targetId);
+    }
+
+    public issueTargetQueue(targetIds: readonly string[]): CommandResult {
+        const ids = targetIds.filter((id, index) => targetIds.indexOf(id) === index);
+        if (ids.length === 0) {
+            return { accepted: false, reason: `[SquadBrain] ${this.squadId} target queue is empty.` };
+        }
+        for (const targetId of ids) {
+            const target = this.worldObjectRegistry.get(targetId);
+            if (!target || target.kind === WorldObjectKind.Base) {
+                return { accepted: false, reason: `[SquadBrain] invalid queued target: ${targetId}` };
+            }
+        }
+        this.queuedTargetIds = ids.slice(1);
+        return this.issueNextTarget(ids[0]!);
+    }
+
+    private issueNextTarget(targetId: string): CommandResult {
         const target = this.worldObjectRegistry.get(targetId);
         if (!target) {
             return {
@@ -149,6 +180,7 @@ export class SquadBrain extends Component {
     }
 
     public clearCommandAndReturnHome(): void {
+        this.queuedTargetIds = [];
         this.commandTargetId = null;
         this.pendingTargetId = null;
         this.pendingReturnHome = true;
@@ -174,6 +206,7 @@ export class SquadBrain extends Component {
         this.activeTargetId = null;
         this.pendingTargetId = null;
         this.pendingReturnHome = false;
+        this.queuedTargetIds = [];
         this.guardEncounterRequested = false;
         this.homeRestCell = { ...homeRestCell };
         this.motor.stop();
@@ -255,7 +288,7 @@ export class SquadBrain extends Component {
             break;
         case SquadBrainState.AttackResource:
             if (this.engagement.consumeTargetDepleted()) {
-                this.clearCommandAndReturnHome();
+                if (!this.advanceQueuedTarget()) this.clearCommandAndReturnHome();
             }
             break;
         default:
@@ -307,6 +340,16 @@ export class SquadBrain extends Component {
         }
 
         this.state = SquadBrainState.EngageTarget;
+    }
+
+    private advanceQueuedTarget(): boolean {
+        while (this.queuedTargetIds.length > 0) {
+            const nextId = this.queuedTargetIds.shift()!;
+            const result = this.issueNextTarget(nextId);
+            if (result.accepted) return true;
+            console.warn(result.reason ?? `[SquadBrain] queued target skipped: ${nextId}`);
+        }
+        return false;
     }
 
     private tryActivateGuard(): boolean {
@@ -443,6 +486,7 @@ export class SquadBrain extends Component {
         this.state = SquadBrainState.HomeIdle;
         this.activeTargetId = null;
         this.pendingTargetId = null;
+        this.queuedTargetIds = [];
         this.pendingReturnHome = false;
         this.idleTimer = randomRange(
             SQUAD_PRESENTATION.idleWaitMinSeconds,

@@ -403,6 +403,8 @@ export class MainMapController extends Component {
         commandController.setup({
             worldObjectRoot,
             commandRoot,
+            selectionRoot: hudRoot,
+            camera,
             worldObjectRegistry,
             squadHandles,
             selection,
