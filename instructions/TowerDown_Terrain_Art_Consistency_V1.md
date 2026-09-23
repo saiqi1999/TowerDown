@@ -212,19 +212,34 @@ private loadAtlasSpriteFrame(): Promise<SpriteFrame> {
 
 本次北侧使用完整两行岩壁，显示高 64px；不是“四行岩壁”。加高必须提供或确认可连续重复的中段，不能把 row=4 当作中段，也不能反复重复带收口的 row=3。此前讨论的 128px 加高尚未实施，不在这里写成已确认的素材能力。
 
-### 9.2 首版转角处理
+### 9.2 使用十字结构中的内转角
 
-当前已核对的左上矩形平台提供的是凸平台外角，不直接拿它们冒充洞穴内角。首版采用直角拼接：
+已按 32px 网格核对原图左侧十字结构（column=0～5，row=23～30），其中存在内角。删除旧方案“没有内角、由直边拼接”的描述。
 
-- 北侧两行横墙仅覆盖 x=0～W-1。
-- 南侧边沿仅覆盖 x=0～W-1。
-- 左右边沿覆盖 y=-2～H，负责四个拐角位置。
+以下名称按**洞内地图的角位置**定义，不按素材在十字架的左右位置定义。PNG 行列从 0 开始。
 
-因此每个坐标只绘制一次，无重叠、无角格空缺；但直角接头的岩石纹理不保证自然。这是明确的首版限制，必须在游戏画面检查接头，不能宣称已有专用内角。后续若从图集其他位置确认适配的凹角，只替换这些接头的取图；本次不臆造凹角坐标。
+| 新 TileVisual | column,row | 源像素 x,y | 地图绘制坐标 |
+| --- | --- | --- | --- |
+| PitNorthWestUpper | 3,27 | 96,864 | -1,-2 |
+| PitNorthWestLower | 3,28 | 96,896 | -1,-1 |
+| PitNorthEastUpper | 2,27 | 64,864 | W,-2 |
+| PitNorthEastLower | 2,28 | 64,896 | W,-1 |
+| PitSouthWest | 3,25 | 96,800 | -1,H |
+| PitSouthEast | 2,25 | 64,800 | W,H |
+
+所有切片 32×32。北侧内角由 row=27、28 连续两块组成，对应北墙两行；南侧使用 row=25 的平面内转角，只需一行。
+
+方向判断：
+- 十字架下竖臂右侧（column=3）的凹角，实体在左，空缺朝右下，用于地图西北内角。
+- 下竖臂左侧（column=2）的凹角，实体在右，空缺朝左下，用于地图东北内角。
+- 上竖臂右侧（column=3,row=25）空缺朝右上，用于地图西南内角。
+- 上竖臂左侧（column=2,row=25）空缺朝左上，用于地图东南内角。
+
+四角不再使用直边瓦片覆盖；不旋转、不镜像。素材在原十字架中的相邻块可以作为拼接参照，运行时仍需验收与长直边相接是否有纹理接缝。
 
 ### 9.3 修改 MapTypes.ts
 
-保留现有 Grass/Dirt TileVisual，新增五个显示类型：
+保留现有 Grass/Dirt TileVisual，新增十一个显示类型：
 
 ```ts
 PitNorthWallUpper = 'PitNorthWallUpper',
@@ -232,6 +247,12 @@ PitNorthWallLower = 'PitNorthWallLower',
 PitSouthRim = 'PitSouthRim',
 PitWestRim = 'PitWestRim',
 PitEastRim = 'PitEastRim',
+PitNorthWestUpper = 'PitNorthWestUpper',
+PitNorthWestLower = 'PitNorthWestLower',
+PitNorthEastUpper = 'PitNorthEastUpper',
+PitNorthEastLower = 'PitNorthEastLower',
+PitSouthWest = 'PitSouthWest',
+PitSouthEast = 'PitSouthEast',
 ```
 
 若本地已实现旧方案的 Cliff 枚举，删除其旧边界使用并同步清理不再使用的枚举和映射，不保留两套边界同时渲染。
@@ -248,9 +269,15 @@ TerrainType、TerrainMap 不变：Pit 只属于显示类型，不是新的可行
 [TileVisual.PitSouthRim]: { column: 4, row: 0 },
 [TileVisual.PitWestRim]: { column: 8, row: 1 },
 [TileVisual.PitEastRim]: { column: 0, row: 1 },
+[TileVisual.PitNorthWestUpper]: { column: 3, row: 27 },
+[TileVisual.PitNorthWestLower]: { column: 3, row: 28 },
+[TileVisual.PitNorthEastUpper]: { column: 2, row: 27 },
+[TileVisual.PitNorthEastLower]: { column: 2, row: 28 },
+[TileVisual.PitSouthWest]: { column: 3, row: 25 },
+[TileVisual.PitSouthEast]: { column: 2, row: 25 },
 ```
 
-对应源 rect：
+直边对应源 rect 如下；六个内角 rect 见第 9.2 节，宽高均为 32：
 
 | 类型 | x | y | width | height |
 | --- | --- | --- | --- | --- |
@@ -260,7 +287,7 @@ TerrainType、TerrainMap 不变：Pit 只属于显示类型，不是新的可行
 | PitWestRim | 256 | 32 | 32 | 32 |
 | PitEastRim | 0 | 32 | 32 | 32 |
 
-getAtlasCell()、getAtlasRect()、UUID 与尺寸保持原样。五种素材都来自同一张 terrain2，不增加资源加载。
+getAtlasCell()、getAtlasRect()、UUID 与尺寸保持原样。直边和内角共十一种素材都来自同一张 terrain2，不增加资源加载。
 
 ### 9.5 修改 MapRenderer.ts
 
@@ -307,11 +334,21 @@ private renderPitBoundary(columns: number, rows: number): void {
         put(TileVisual.PitSouthRim, x, rows);
     }
 
-    // 侧沿朝洞内；覆盖北墙两行和南沿一行的接头。
-    for (let y = -2; y <= rows; y += 1) {
+    // 直侧沿只覆盖原地图行，不占用内角位置。
+    for (let y = 0; y < rows; y += 1) {
         put(TileVisual.PitWestRim, -1, y);
         put(TileVisual.PitEastRim, columns, y);
     }
+
+    // 北侧两个内角各由上下两块组成。
+    put(TileVisual.PitNorthWestUpper, -1, -2);
+    put(TileVisual.PitNorthWestLower, -1, -1);
+    put(TileVisual.PitNorthEastUpper, columns, -2);
+    put(TileVisual.PitNorthEastLower, columns, -1);
+
+    // 南侧内角只占一行。
+    put(TileVisual.PitSouthWest, -1, rows);
+    put(TileVisual.PitSouthEast, columns, rows);
 }
 ```
 
@@ -366,7 +403,7 @@ MapResolver 仍只解析地图内 Grass/Dirt；MainMapController 加载和初始
 
 1. 正面岩壁位于地图上方，其底部贴近基地地面；下方只显示近景边沿。不能再呈现“基地上表面、岩壁垂在基地下方”的凸平台构图。
 2. 左边使用原图右沿、右边使用原图左沿；岩层实体位于外围，边缘朝洞内；禁止旋转、负缩放。
-3. 检查四处直角接头，允许首版纹理接头不够自然，但不得出现空格或把凸平台角作为凹洞角。明显破坏地洞读法时必须调整接头素材后再验收。
+3. 四处使用十字结构的真实内角：北角 row=27 在上、row=28 在下，南角 row=25；西侧取 column=3，东侧取 column=2。检查与北墙、侧沿、南沿连接，无透明裂口、重复覆盖或方向反转。不得再用直侧沿覆盖六个角格。
 4. W×H 地图新增节点数 3W+2H+6；40×23 地图新增 172 个，总计 1092 个。连续重绘数量不翻倍。
 5. 所有 Pit 节点在地图逻辑范围外，原 Tile_0_0、建筑和单位位置不变。
 6. row=4 不用于横墙；北墙下段 row=3 不被当作重复中段。确认 TypeScript 枚举和 atlas 表完整对应。
