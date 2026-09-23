@@ -188,77 +188,85 @@ private loadAtlasSpriteFrame(): Promise<SpriteFrame> {
 6. 确认无旧 fallback 引用、类型检查通过、每格仍为 32×32。新图片加载失败时明确报错。
 
 
-## 9. 下一步：使用同图集绘制世界外沿悬崖
+## 9. 下一步：地洞内壁式世界边界（替代凸起平台方案）
 
-基于已推送的 `c19b232`。第 1～8 节的换图已完成，本节是新增待实施步骤。只修改现有 `MapTypes.ts`、`TerrainAtlas.ts`、`MapRenderer.ts` 三个脚本；不新增文件、图片、组件或场景层级。
+目标是基地位于低处、四周为高处岩层。**正面岩壁绘制在地图上方，窄边沿绘制在地图下方，左右边缘朝向洞内。** 本节完整替代旧的“上方窄边、下方正面岩壁”方案。
 
-### 9.1 显示规则
+只修改现有 MapTypes.ts、TerrainAtlas.ts、MapRenderer.ts；不新增文件、资源、组件或场景层级。本次只更新方案，尚未修改运行时代码。
 
-沿现有矩形地图外侧补画装饰瓦片：上方 1 行、左右各 1 列、下方 2 行。原地图内容和坐标不移动、不扩容。
+### 9.1 取图与空间关系
 
-同一平台素材在俯视角下，上沿是窄崖沿，左右是侧沿，下方才有完整可见岩壁。使用其原始方向，不旋转底部岩壁冒充另外三面，以保持光线和透视一致。
+图片坐标从左上开始，以 32px 为一格。左上矩形平台的 row=0、1 是顶面，row=2、3 才是正面岩壁。row=4 中部透明，不能作为完整岩壁追加。
 
-这是有限宽度的悬崖边界，不是无限背景填充。外沿之后以及素材透明角以外仍可见背景；当前镜头允许 overscroll=48、最小缩放 0.85，一格宽边界不能保证视口中完全没有黑色。本步不修改相机限制。
+地图内部仍使用原 Grass/Dirt 地形，原点与行列数不变。边界节点只放在原地图之外：
 
-### 9.2 原图取块位置
+| 地图位置 | 取图 | 作用 |
+| --- | --- | --- |
+| 北侧，靠外一行 y=-2 | 原正面岩壁 row=2 | 上部岩壁 |
+| 北侧，靠地图一行 y=-1 | 原正面岩壁 row=3 | 岩壁下端面向基地 |
+| 南侧 y=H | 原平台顶沿 row=0 | 近景洞口边沿，地面向画面下方延伸 |
+| 西侧 x=-1 | 原平台右边缘 column=8 | 岩层在左、边缘朝右面的洞内 |
+| 东侧 x=W | 原平台左边缘 column=0 | 岩层在右、边缘朝左面的洞内 |
 
-只使用 terrain2 左上角矩形平台的 9 列×4 行区域，源范围 x=0～287、y=0～127。全部切片为 32×32，按 PNG 左上为原点，不使用下方斜坡形状，也不使用草坪区域。
+这里是交换素材的使用位置，不旋转或镜像图片，保持原光照。不要仅把所有旧 CliffTop/Bottom 的坐标交换：原凸平台外角不能因此变成凹洞内角。
 
-| 新 TileVisual | column,row | 像素 x,y | 放置用途 |
-| --- | --- | --- | --- |
-| CliffTopLeft | 0,0 | 0,0 | 左上外角 |
-| CliffTop | 4,0 | 128,0 | 上沿重复块 |
-| CliffTopRight | 8,0 | 256,0 | 右上外角 |
-| CliffLeft | 0,1 | 0,32 | 左侧重复块 |
-| CliffRight | 8,1 | 256,32 | 右侧重复块 |
-| CliffBottomLeftUpper | 0,2 | 0,64 | 下方第一行左角 |
-| CliffBottomUpper | 4,2 | 128,64 | 下方第一行岩壁 |
-| CliffBottomRightUpper | 8,2 | 256,64 | 下方第一行右角 |
-| CliffBottomLeftLower | 0,3 | 0,96 | 下方第二行左角 |
-| CliffBottomLower | 4,3 | 128,96 | 下方第二行岩壁 |
-| CliffBottomRightLower | 8,3 | 256,96 | 下方第二行右角 |
+本次北侧使用完整两行岩壁，显示高 64px；不是“四行岩壁”。加高必须提供或确认可连续重复的中段，不能把 row=4 当作中段，也不能反复重复带收口的 row=3。此前讨论的 128px 加高尚未实施，不在这里写成已确认的素材能力。
 
-已按 32px 网格查看原图：第 0 行是顶沿，第 1 行是平面侧沿，第 2、3 行是正面岩壁。Upper/Lower 是同一岩壁连续的两段，不可互换或将一段拉伸两倍高。侧边和角保留原图透明像素。
+### 9.2 首版转角处理
 
-这些坐标对应真实素材区域；重复中心列后接缝的美术效果仍需运行验收，不能仅凭坐标正确就认定无缝。若有明显纹理断口，仅在这片矩形平台内调整重复列或采用连续列循环，不变更边界生成逻辑。
+当前已核对的左上矩形平台提供的是凸平台外角，不直接拿它们冒充洞穴内角。首版采用直角拼接：
 
-### 9.3 修改 MapTypes.ts：只扩充 TileVisual
+- 北侧两行横墙仅覆盖 x=0～W-1。
+- 南侧边沿仅覆盖 x=0～W-1。
+- 左右边沿覆盖 y=-2～H，负责四个拐角位置。
 
-在现有枚举末尾添加第 9.2 节的 11 个名字，每个字符串值与名字相同，例如：
+因此每个坐标只绘制一次，无重叠、无角格空缺；但直角接头的岩石纹理不保证自然。这是明确的首版限制，必须在游戏画面检查接头，不能宣称已有专用内角。后续若从图集其他位置确认适配的凹角，只替换这些接头的取图；本次不臆造凹角坐标。
 
-```ts
-CliffTopLeft = 'CliffTopLeft',
-CliffTop = 'CliffTop',
-// 其余按表补齐
-```
+### 9.3 修改 MapTypes.ts
 
-TerrainType 不新增 Cliff，TerrainMap 不变。悬崖是外部显示节点，不进入逻辑地形枚举。
-
-### 9.4 修改 TerrainAtlas.ts：补充 ATLAS_CELLS
-
-保持现有 10 个泥地/草地映射原样，在同一个表中追加：
+保留现有 Grass/Dirt TileVisual，新增五个显示类型：
 
 ```ts
-[TileVisual.CliffTopLeft]: { column: 0, row: 0 },
-[TileVisual.CliffTop]: { column: 4, row: 0 },
-[TileVisual.CliffTopRight]: { column: 8, row: 0 },
-[TileVisual.CliffLeft]: { column: 0, row: 1 },
-[TileVisual.CliffRight]: { column: 8, row: 1 },
-[TileVisual.CliffBottomLeftUpper]: { column: 0, row: 2 },
-[TileVisual.CliffBottomUpper]: { column: 4, row: 2 },
-[TileVisual.CliffBottomRightUpper]: { column: 8, row: 2 },
-[TileVisual.CliffBottomLeftLower]: { column: 0, row: 3 },
-[TileVisual.CliffBottomLower]: { column: 4, row: 3 },
-[TileVisual.CliffBottomRightLower]: { column: 8, row: 3 },
+PitNorthWallUpper = 'PitNorthWallUpper',
+PitNorthWallLower = 'PitNorthWallLower',
+PitSouthRim = 'PitSouthRim',
+PitWestRim = 'PitWestRim',
+PitEastRim = 'PitEastRim',
 ```
 
-getAtlasCell()、getAtlasRect()、图片 UUID、切片尺寸保持不变。Record<TileVisual, AtlasCell> 会在编译时要求新枚举的坐标齐全。
+若本地已实现旧方案的 Cliff 枚举，删除其旧边界使用并同步清理不再使用的枚举和映射，不保留两套边界同时渲染。
 
-### 9.5 修改 MapRenderer.ts：复用已有节点创建过程
+TerrainType、TerrainMap 不变：Pit 只属于显示类型，不是新的可行走地形。
 
-#### A. 抽取 createTile()，避免复制原 render() 中的 Sprite 设置
+### 9.4 修改 TerrainAtlas.ts
 
-在同一个类中新增方法，不新建脚本：
+保持原 10 个地表映射，追加：
+
+```ts
+[TileVisual.PitNorthWallUpper]: { column: 4, row: 2 },
+[TileVisual.PitNorthWallLower]: { column: 4, row: 3 },
+[TileVisual.PitSouthRim]: { column: 4, row: 0 },
+[TileVisual.PitWestRim]: { column: 8, row: 1 },
+[TileVisual.PitEastRim]: { column: 0, row: 1 },
+```
+
+对应源 rect：
+
+| 类型 | x | y | width | height |
+| --- | --- | --- | --- | --- |
+| PitNorthWallUpper | 128 | 64 | 32 | 32 |
+| PitNorthWallLower | 128 | 96 | 32 | 32 |
+| PitSouthRim | 128 | 0 | 32 | 32 |
+| PitWestRim | 256 | 32 | 32 | 32 |
+| PitEastRim | 0 | 32 | 32 | 32 |
+
+getAtlasCell()、getAtlasRect()、UUID 与尺寸保持原样。五种素材都来自同一张 terrain2，不增加资源加载。
+
+### 9.5 修改 MapRenderer.ts
+
+#### A. 抽取 createTile()
+
+将原 render() 中创建节点、设置位置和 Sprite 的代码抽入同类方法：
 
 ```ts
 private createTile(
@@ -283,44 +291,33 @@ private createTile(
 }
 ```
 
-这是将原有逐格渲染代码移入方法，行为不变。不添加按钮、碰撞器或输入监听。
+复用现有 TileRoot 和 frameCache，不新增输入、碰撞或地形数据。
 
-#### B. 新增 renderCliffBoundary(columns, rows)
+#### B. 新增 renderPitBoundary()，取代旧 renderCliffBoundary()
 
 ```ts
-private renderCliffBoundary(columns: number, rows: number): void {
+private renderPitBoundary(columns: number, rows: number): void {
     const put = (visual: TileVisual, x: number, y: number): void => {
-        this.createTile(visual, x, y, columns, rows, 'Cliff');
+        this.createTile(visual, x, y, columns, rows, 'Pit');
     };
 
-    // 上沿：不包括角，角单独画一次。
-    put(TileVisual.CliffTopLeft, -1, -1);
     for (let x = 0; x < columns; x += 1) {
-        put(TileVisual.CliffTop, x, -1);
-    }
-    put(TileVisual.CliffTopRight, columns, -1);
-
-    // 左右沿：只覆盖原地图的行。
-    for (let y = 0; y < rows; y += 1) {
-        put(TileVisual.CliffLeft, -1, y);
-        put(TileVisual.CliffRight, columns, y);
+        put(TileVisual.PitNorthWallUpper, x, -2);
+        put(TileVisual.PitNorthWallLower, x, -1);
+        put(TileVisual.PitSouthRim, x, rows);
     }
 
-    // 正面岩壁：连续两行，包含各自左右角。
-    put(TileVisual.CliffBottomLeftUpper, -1, rows);
-    put(TileVisual.CliffBottomLeftLower, -1, rows + 1);
-    for (let x = 0; x < columns; x += 1) {
-        put(TileVisual.CliffBottomUpper, x, rows);
-        put(TileVisual.CliffBottomLower, x, rows + 1);
+    // 侧沿朝洞内；覆盖北墙两行和南沿一行的接头。
+    for (let y = -2; y <= rows; y += 1) {
+        put(TileVisual.PitWestRim, -1, y);
+        put(TileVisual.PitEastRim, columns, y);
     }
-    put(TileVisual.CliffBottomRightUpper, columns, rows);
-    put(TileVisual.CliffBottomRightLower, columns, rows + 1);
 }
 ```
 
-外部坐标可直接使用现有 gridCellToWorldCenter()：它只是位置换算，没有数组索引或边界截断。**传入的 columns/rows 始终是原地图尺寸**，不要改成 columns+2、rows+3，否则原地图与建筑会错位。
+gridCellToWorldCenter() 支持负数及范围外坐标，直接复用；始终传入原 columns、rows，不能传扩容后的地图大小。
 
-#### C. 修改 render(map)
+#### C. 修改 render()
 
 ```ts
 public render(map: TerrainMap): void {
@@ -329,23 +326,24 @@ public render(map: TerrainMap): void {
     const columns = map[0]?.length ?? 0;
     if (rows === 0 || columns === 0) return;
 
-    this.renderCliffBoundary(columns, rows);
+    this.renderPitBoundary(columns, rows);
+
     for (let y = 0; y < rows; y += 1) {
         for (let x = 0; x < columns; x += 1) {
-            const visual = this.resolver.resolve(map, x, y);
-            this.createTile(visual, x, y, columns, rows, 'Tile');
+            this.createTile(
+                this.resolver.resolve(map, x, y),
+                x, y, columns, rows, 'Tile',
+            );
         }
     }
 }
 ```
 
-先画外沿，再画地表。它们在同一 TileRoot 内，使用同一 layer 和 SpriteFrame 缓存。格子不重叠，不需要引入额外排序系统。
+原地表渲染顺序和位置不变。若旧边界已存在，只保留 renderPitBoundary() 调用，不能再调用旧方法。
 
-#### D. clear() / getOrCreateFrame()
+#### D. clear() 与缓存
 
-getOrCreateFrame() 保持现有方法不变，新 visual 自动走同一裁切缓存。
-
-clear() 原来仅 removeAllChildren；本次会反复创建额外边界节点，改为销毁该 renderer 专用 TileRoot 下的旧瓦片，避免只脱离但不销毁：
+为避免重绘只脱离旧边界但不销毁，clear() 改为：
 
 ```ts
 public clear(): void {
@@ -356,20 +354,19 @@ public clear(): void {
 }
 ```
 
-TileRoot 当前只承载地图瓦片；不要将其他交互节点放入其中。先脱离再销毁避免延迟销毁导致当帧重叠。普通重绘保留 frameCache，不在每次 clear 时销毁贴图。
+TileRoot 仍专用于地图瓦片。getOrCreateFrame() 不变，新增枚举复用现有缓存。普通重绘不销毁共享图集。
 
-### 9.6 本轮保持不变的 tile 调用
+### 9.6 保持一致性
 
-- MapResolver 仍只负责原地图内 Grass/Dirt 解析，不在它里面访问负坐标或返回 Cliff。
-- MainMapController 原 new MapRenderer 与 render(STATIC_MAP) 调用不改。
-- 原 STATIC_MAP 行列数不变，不能补 Cliff 到地图数组。
-- GridTransform 不改，世界原点不移动。
+MapResolver 仍只解析地图内 Grass/Dirt；MainMapController 加载和初始化不改；StaticMap、GridTransform、地图可建造和可行走范围不改。
+
+悬崖不是无限背景。北侧覆盖 64px，其他方向覆盖 32px，素材透明边及外沿之外仍可见背景。本次不通过相机或逻辑地图扩容掩盖背景。
 
 ### 9.7 验收
 
-1. 原图为 W×H 时，外沿节点数是 3W+2H+6。当前 40×23 地图应新增 172 个 Cliff 节点，总瓦片节点 1092；四角不能重复。
-2. 上方 y=-1、两侧 x=-1/W、下方 y=H/H+1 全部有对应方向素材，底部两行顺序正确。
-3. 原 Tile_0_0、基地及建筑位置与修改前完全相同；外沿没有成为可建造/可行走格。
-4. 平移和缩放地图，检查外沿随 MapRoot 一起移动；TileRoot 及父节点如有 Mask 导致外沿被裁切，先定位现有遮罩，不通过扩大逻辑地图修复。
-5. 检查上下左右的重复接缝、四角与直边连接；岩壁没有上下倒置或非等比拉伸。底部之外的背景仍属于本次边界范围外。
-6. 连续 render 两次，节点数量不翻倍；类型检查通过，无缺失的 TileVisual 映射。
+1. 正面岩壁位于地图上方，其底部贴近基地地面；下方只显示近景边沿。不能再呈现“基地上表面、岩壁垂在基地下方”的凸平台构图。
+2. 左边使用原图右沿、右边使用原图左沿；岩层实体位于外围，边缘朝洞内；禁止旋转、负缩放。
+3. 检查四处直角接头，允许首版纹理接头不够自然，但不得出现空格或把凸平台角作为凹洞角。明显破坏地洞读法时必须调整接头素材后再验收。
+4. W×H 地图新增节点数 3W+2H+6；40×23 地图新增 172 个，总计 1092 个。连续重绘数量不翻倍。
+5. 所有 Pit 节点在地图逻辑范围外，原 Tile_0_0、建筑和单位位置不变。
+6. row=4 不用于横墙；北墙下段 row=3 不被当作重复中段。确认 TypeScript 枚举和 atlas 表完整对应。
