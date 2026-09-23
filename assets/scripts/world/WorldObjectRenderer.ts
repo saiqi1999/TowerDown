@@ -38,6 +38,7 @@ import { type HoverInfoController } from '../ui/hover/HoverInfoController';
 import { type BaseInteractionController } from '../ui/base/BaseInteractionController';
 import { InteractionFeedbackPresetId } from '../feedback/interaction/InteractionFeedbackConfig';
 import { InteractionFeedbackView } from '../feedback/interaction/InteractionFeedbackView';
+import { BuildingFrameAnimation, type BuildingAnimationSet } from '../building/BuildingFrameAnimation';
 
 export class WorldObjectRenderer {
     private readonly frameCache = new Map<WorldVisualId, SpriteFrame>();
@@ -254,18 +255,29 @@ export class WorldObjectRenderer {
         return this.nodeByObjectId.get(objectId) ?? null;
     }
 
-    public setBaseSpriteFrame(frame: SpriteFrame): void {
+    public setupBaseAnimation(animations: BuildingAnimationSet): void {
         const node = this.nodeByObjectId.get('base_main');
-        const sprite = node?.getChildByName('FeedbackRoot')
-            ?.getChildByName('SpriteVisual')
-            ?.getComponent(Sprite) ?? null;
+        const spriteNode = node?.getChildByName('FeedbackRoot')?.getChildByName('SpriteVisual') ?? null;
+        const sprite = spriteNode?.getComponent(Sprite) ?? null;
         if (!sprite) {
-            console.warn('[WorldObjectRenderer] base visual sprite missing for frame swap.');
+            console.warn('[WorldObjectRenderer] base SpriteVisual/Sprite missing for animation setup.');
             return;
         }
+        const player = spriteNode!.getComponent(BuildingFrameAnimation)
+            ?? spriteNode!.addComponent(BuildingFrameAnimation);
+        player.setup(sprite, animations);
+    }
 
-        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
-        sprite.spriteFrame = frame;
+    public setBaseVisualState(state: 'idle' | 'ready'): void {
+        const player = this.nodeByObjectId.get('base_main')
+            ?.getChildByName('FeedbackRoot')
+            ?.getChildByName('SpriteVisual')
+            ?.getComponent(BuildingFrameAnimation) ?? null;
+        if (!player) {
+            console.warn('[WorldObjectRenderer] base animation player missing.');
+            return;
+        }
+        player.setState(state);
     }
 
     public playBaseFeedbackClick(objectId = 'base_main'): void {

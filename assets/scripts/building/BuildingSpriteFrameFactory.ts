@@ -12,6 +12,7 @@ import { Rect, Size, SpriteFrame, Texture2D, Vec2 } from 'cc';
 import { GRID_SOURCE_SIZE } from '../grid/GridConfig';
 import { type BuildingDefinition } from './BuildingTypes';
 import { BuildingVisualLibrary } from './BuildingVisualLibrary';
+import { type BuildingAnimationSet } from './BuildingFrameAnimation';
 export class BuildingSpriteFrameFactory {
     private readonly cache = new Map<string, SpriteFrame>();
     constructor(
@@ -30,5 +31,9 @@ export class BuildingSpriteFrameFactory {
         }
         this.cache.set(definition.id, frame);
         return frame;
+    }
+
+    public getAnimationSet(visualKey: string): BuildingAnimationSet | null {
+        return this.visualLibrary?.getAnimationSet(visualKey) ?? null;
     }
 }

@@ -135,12 +135,6 @@ export class MainMapController extends Component {
     @property(Texture2D)
     public slimeAttackTexture: Texture2D | null = null;
 
-    @property(SpriteFrame)
-    public townCenterIdleFrame: SpriteFrame | null = null;
-
-    @property(SpriteFrame)
-    public townCenterReadyFrame: SpriteFrame | null = null;
-
     private mapRenderer: MapRenderer | null = null;
     private worldObjectRenderer: WorldObjectRenderer | null = null;
     private squadRenderer: SquadRenderer | null = null;
@@ -235,16 +229,6 @@ export class MainMapController extends Component {
         const slimeAttackTexture = this.requireInspectorTexture(this.slimeAttackTexture, 'slimeAttackTexture');
         const buildingUiAssets = await new BuildingUiAssetLoader().load();
         const hoverInfoAssets = await new HoverInfoAssetLoader().load();
-        const townCenterIdleFrame = await this.resolveSpriteFrame(
-            this.townCenterIdleFrame,
-            '89b116e7-6b29-4acd-b553-625ac46f5e4a@f9941',
-            'towncenter0',
-        );
-        const townCenterReadyFrame = await this.resolveSpriteFrame(
-            this.townCenterReadyFrame,
-            'a5e06615-45ef-414d-9a35-32431801e4a9@f9941',
-            'towncenter1',
-        );
         const hudRoot = this.getOrCreateCanvasChild('HUDRoot');
         const hudTransform = hudRoot.getComponent(UITransform)
             ?? hudRoot.addComponent(UITransform);
@@ -358,6 +342,9 @@ export class MainMapController extends Component {
             STATIC_MAP[0]?.length ?? 0,
             STATIC_MAP.length,
         );
+        const baseAnimation = buildingVisualLibrary.getAnimationSet('towncenter');
+        if (!baseAnimation) throw new Error('Towncenter animation assets missing.');
+        this.worldObjectRenderer.setupBaseAnimation(baseAnimation);
         const monsterRenderer = new MonsterGroupRenderer(
             monsterRoot,
             slimeMoveTexture,
@@ -636,10 +623,8 @@ export class MainMapController extends Component {
         });
         transition.setupPanel();
         baseInteraction.setup({
-            idleFrame: townCenterIdleFrame,
-            readyFrame: townCenterReadyFrame,
             panel: basePanel,
-            setBaseSpriteFrame: (frame) => this.setBaseSpriteFrame(frame),
+            setBaseVisualState: (state) => this.worldObjectRenderer?.setBaseVisualState(state),
             onOpenStateChanged: (open) => {
                 if (open) { buildToolController.cancel(); relocation?.cancel(); }
                 hoverInfo.setSuspended(open);
@@ -746,10 +731,6 @@ export class MainMapController extends Component {
     protected onDestroy(): void {
         this.baseInteraction?.destroy();
         this.baseInteraction = null;
-    }
-
-    private setBaseSpriteFrame(frame: SpriteFrame): void {
-        this.worldObjectRenderer?.setBaseSpriteFrame(frame);
     }
 
     private beginGuardCombat(

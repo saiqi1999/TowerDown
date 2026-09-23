@@ -19,6 +19,7 @@ import { type HoverInfoController } from '../ui/hover/HoverInfoController';
 import { InteractionFeedbackView } from '../feedback/interaction/InteractionFeedbackView';
 import { InteractionFeedbackPresetId } from '../feedback/interaction/InteractionFeedbackConfig';
 import { FeedbackClickTarget } from '../feedback/interaction/FeedbackClickTarget';
+import { BuildingFrameAnimation } from './BuildingFrameAnimation';
 
 export class BuildingRenderer {
     constructor(
@@ -46,6 +47,8 @@ export class BuildingRenderer {
         spriteNode.setPosition(0, definition.visualHeightPixels / 2, 0);
         spriteNode.addComponent(UITransform).setContentSize(definition.visualWidthPixels, definition.visualHeightPixels);
         const sprite = spriteNode.addComponent(Sprite); sprite.sizeMode = Sprite.SizeMode.CUSTOM; sprite.spriteFrame = this.factory.getFrame(definition);
+        const animations = this.factory.getAnimationSet(definition.id);
+        if (animations) spriteNode.addComponent(BuildingFrameAnimation).setup(sprite, animations);
         node.setScale(definition.visualScale, definition.visualScale, 1);
         node.setPosition(gridRectToWorldCenter(instance.gridX, instance.gridY, definition.footprintW, definition.footprintH, this.mapWidth, this.mapHeight));
         const feedback = node.addComponent(InteractionFeedbackView);
