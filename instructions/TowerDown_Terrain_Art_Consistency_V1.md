@@ -1,84 +1,89 @@
-# TowerDown：替换 terrain2 瓦片的最小修改方案
+# TowerDown：terrain2 瓦片替换与草地边缘解析方案
 
-本方案完整替代本文旧内容。仅修改现有文件中的瓦片图片引用、切片尺寸与坐标，以及对应加载失败处理；不新增、删除或移动任何文件。
+本方案替代此前的泥地边缘映射。仅涉及 tile 图片、切片、类型及解析；修改现有文件，不新增、删除或移动文件。本文是实施方案，尚未执行代码修改。
 
-## 1. 修改 assets/scripts/map/TerrainAtlas.ts
+## 1. 统一规则
 
-保持 AtlasCell、AtlasRect、getAtlasCell()、getAtlasRect() 的接口与调用方式不变。
+- TerrainType.Grass 仍表示草地，TerrainType.Dirt 仍表示泥地；不交换地图数据或逻辑含义。
+- 泥地只显示 DirtCenter。
+- 草地根据上下左右是否也是草地，显示 GrassCenter、四边或四角。
+- 新素材底部是棕色地面包围草坪，因此过渡切片应放在草地格内。
+- 每格世界大小仍为 32×32；新图源切片为 32×32。
 
-### 1.1 图片引用和切片大小
+## 2. assets/scripts/map/MapTypes.ts
 
-将导入改为：
+TerrainType 和 TerrainMap 保持不变。将 TileVisual 枚举整体替换为：
 
 ```ts
-import { GRID_RENDER_SIZE } from '../grid/GridConfig';
+export enum TileVisual {
+    DirtCenter = 'DirtCenter',
+    GrassCenter = 'GrassCenter',
+    GrassTop = 'GrassTop',
+    GrassBottom = 'GrassBottom',
+    GrassLeft = 'GrassLeft',
+    GrassRight = 'GrassRight',
+    GrassTopLeft = 'GrassTopLeft',
+    GrassTopRight = 'GrassTopRight',
+    GrassBottomLeft = 'GrassBottomLeft',
+    GrassBottomRight = 'GrassBottomRight',
+}
 ```
 
-修改两个现有常量：
+旧 TileVisual.Grass 改为 GrassCenter；原 Dirt 的八个边角名称全部改成 Grass 对应名称。DirtCenter 保留。
+
+## 3. assets/scripts/map/TerrainAtlas.ts
+
+### 3.1 图片与尺寸
+
+将 GridConfig 导入改为只导入 GRID_RENDER_SIZE；不要修改 GridConfig 本身。
 
 ```ts
 export const ATLAS_TILE_SIZE = 32;
+export const TILE_RENDER_SIZE = GRID_RENDER_SIZE;
 export const TERRAIN_SPRITE_FRAME_UUID =
     '0ca7c1ca-86e7-4aba-9a38-521cfec5c983@f9941';
 ```
 
-TILE_RENDER_SIZE 继续使用 GRID_RENDER_SIZE。新图以 32×32 源像素裁切，每格仍显示为原来的 32×32 世界尺寸。不要改 GridConfig。
+删除旧 TERRAIN_SPRITE_FRAME_FALLBACK_UUID 常量，并按第 6 节清理加载引用，避免新坐标裁旧图。
 
-删除本文件中旧的 TERRAIN_SPRITE_FRAME_FALLBACK_UUID 常量：旧图不能使用新图的裁切坐标。对应加载引用一并按第 2 节调整，不增加新的图集配置系统。
+### 3.2 完整替换 ATLAS_CELLS
 
-### 1.2 替换 ATLAS_CELLS
-
-下列坐标按原图左上为原点，column/row 从 0 开始：
+以下 column、row 均从整张 576×1120 PNG 左上角开始，索引从 0 开始，不是底部素材区域的局部坐标。
 
 ```ts
 const ATLAS_CELLS: Record<TileVisual, AtlasCell> = {
-    [TileVisual.Grass]: { column: 3, row: 33 },
-    [TileVisual.DirtTopLeft]: { column: 0, row: 31 },
-    [TileVisual.DirtTop]: { column: 0, row: 31 },
-    [TileVisual.DirtTopRight]: { column: 0, row: 31 },
-    [TileVisual.DirtLeft]: { column: 0, row: 31 },
-    [TileVisual.DirtCenter]: { column: 0, row: 31 },
-    [TileVisual.DirtRight]: { column: 0, row: 31 },
-    [TileVisual.DirtBottomLeft]: { column: 0, row: 31 },
-    [TileVisual.DirtBottom]: { column: 0, row: 31 },
-    [TileVisual.DirtBottomRight]: { column: 0, row: 31 },
+    [TileVisual.DirtCenter]:       { column: 0, row: 31 },
+    [TileVisual.GrassTopLeft]:     { column: 2, row: 31 },
+    [TileVisual.GrassTop]:         { column: 3, row: 31 },
+    [TileVisual.GrassTopRight]:    { column: 4, row: 31 },
+    [TileVisual.GrassLeft]:        { column: 2, row: 32 },
+    [TileVisual.GrassCenter]:      { column: 3, row: 32 },
+    [TileVisual.GrassRight]:       { column: 4, row: 32 },
+    [TileVisual.GrassBottomLeft]:  { column: 2, row: 34 },
+    [TileVisual.GrassBottom]:      { column: 3, row: 34 },
+    [TileVisual.GrassBottomRight]: { column: 4, row: 34 },
 };
 ```
 
-对应源图片区域：
-
-| 类型 | x | y | width | height |
-| --- | --- | --- | --- | --- |
-| 草地 | 96 | 1056 | 32 | 32 |
-| 泥地（底部棕色地面） | 0 | 992 | 32 | 32 |
-
-取图限定在图片底部平面地表区，不使用顶部高台。Grass=(3,33) 是底部草坪内部；DirtCenter=(0,31) 是底部棕色地面。像素原点均从整张 PNG 左上计算，不是从底部素材区重新计数。
-
-**边角素材限制：** 底部中间图案是棕色地面包围绿色草坪。其左上、上边、右上等切片是草坪向棕色地面过渡，不是棕色泥地向草地过渡。现有 MapResolver 是在 Dirt 格子上选择 DirtTop/Left 等，直接将这些草坪边角填入 Dirt 枚举会造成材质内外反转。
-
-因此，上表只有 Grass 和 DirtCenter 是对应材质的正式取图；八种 Dirt 边角共用 (0,31) 是明确的纯地面回退，不代表它们在素材中具有独立匹配块。当前保持解析逻辑不变的换图仍为硬边。不能把此表称为完整边角替换。要保留自然泥地边缘，需要提供方向匹配的泥地边角素材；不能仅靠重新填写坐标解决。
-
-供核对的底部草坪切片如下（仅解释图集，不写入 Dirt 的映射）：
-
-| 草坪外观 | column | row | 像素 x,y |
+| 类型 | column,row | 源像素 x,y | 尺寸 |
 | --- | --- | --- | --- |
-| 上左角 | 2 | 31 | 64,992 |
-| 上边 | 3 | 31 | 96,992 |
-| 上右角 | 4 | 31 | 128,992 |
-| 左边 | 2 | 32 | 64,1024 |
-| 中心 | 3 | 32 | 96,1024 |
-| 右边 | 4 | 32 | 128,1024 |
-| 下左角 | 2 | 34 | 64,1088 |
-| 下边 | 3 | 34 | 96,1088 |
-| 下右角 | 4 | 34 | 128,1088 |
+| DirtCenter | 0,31 | 0,992 | 32×32 |
+| GrassTopLeft | 2,31 | 64,992 | 32×32 |
+| GrassTop | 3,31 | 96,992 | 32×32 |
+| GrassTopRight | 4,31 | 128,992 | 32×32 |
+| GrassLeft | 2,32 | 64,1024 | 32×32 |
+| GrassCenter | 3,32 | 96,1024 | 32×32 |
+| GrassRight | 4,32 | 128,1024 | 32×32 |
+| GrassBottomLeft | 2,34 | 64,1088 | 32×32 |
+| GrassBottom | 3,34 | 96,1088 | 32×32 |
+| GrassBottomRight | 4,34 | 128,1088 | 32×32 |
 
-原草坪图案高四格，row=33 是另一行中段；不能直接把它误作下边。列 0～1 的 row=33 区域透明，也不能取作地面。
+原图中间草坪高四格，row=33 是额外的中段，不是下边；下边必须取 row=34。顶部切片大部分是棕色、草出现在下侧；底部切片草出现在上侧，这是原素材的过渡形状，不要因主体颜色占比而上下互换。
 
-### 1.3 两个方法保持原样
+### 3.3 保持两个方法
 
-getAtlasCell(visual) 继续读取 ATLAS_CELLS。
-
-getAtlasRect(visual) 继续使用原公式，无须修改方法：
+getAtlasCell(visual) 保持返回 ATLAS_CELLS[visual]。
+getAtlasRect(visual) 保持当前计算：
 
 ```ts
 return {
@@ -89,15 +94,60 @@ return {
 };
 ```
 
-因此 MapRenderer 不需要调整参数或调用代码。
+不增加 profile、图集加载类或其他配置文件。
 
-## 2. 修改 assets/scripts/map/MainMapController.ts
+## 4. assets/scripts/map/MapResolver.ts
 
-只修改瓦片 import 和已有 loadAtlasSpriteFrame()。bootstrap() 中原来的调用和 new MapRenderer(tileRoot, atlasSpriteFrame) 均保持原样。
+修改 resolve()：非草地返回 DirtCenter；只有草地计算邻接。将 isDirt() 改名为 isGrass()，判断对象改为 TerrainType.Grass。
 
-将 TerrainAtlas 的导入改为只导入 TERRAIN_SPRITE_FRAME_UUID。
+完整替换参考：
 
-loadAtlasSpriteFrame() 保留原方法名、参数与返回类型，移除使用旧图片的回退分支：
+```ts
+import { TerrainType, TileVisual, type TerrainMap } from './MapTypes';
+
+export class MapResolver {
+    public resolve(map: TerrainMap, x: number, y: number): TileVisual {
+        if (map[y]?.[x] !== TerrainType.Grass) {
+            return TileVisual.DirtCenter;
+        }
+
+        const missingTop = !this.isGrass(map, x, y - 1);
+        const missingRight = !this.isGrass(map, x + 1, y);
+        const missingBottom = !this.isGrass(map, x, y + 1);
+        const missingLeft = !this.isGrass(map, x - 1, y);
+
+        if (missingTop && missingLeft) return TileVisual.GrassTopLeft;
+        if (missingTop && missingRight) return TileVisual.GrassTopRight;
+        if (missingBottom && missingLeft) return TileVisual.GrassBottomLeft;
+        if (missingBottom && missingRight) return TileVisual.GrassBottomRight;
+        if (missingTop) return TileVisual.GrassTop;
+        if (missingBottom) return TileVisual.GrassBottom;
+        if (missingLeft) return TileVisual.GrassLeft;
+        if (missingRight) return TileVisual.GrassRight;
+        return TileVisual.GrassCenter;
+    }
+
+    private isGrass(map: TerrainMap, x: number, y: number): boolean {
+        return map[y]?.[x] === TerrainType.Grass;
+    }
+}
+```
+
+地图外仍按“不属于当前地形”处理，保持原解析器的越界规则，所以地图外沿的草地也会选边缘块。
+
+本轮沿用原四邻接和分支优先级；没有增加对角判断。九宫格不覆盖凹角、单格草坪或同时缺失相对两边的窄条等全部组合；这些形状仍存在原算法的表达限制，不能将本次替换描述为完整自动拼接系统。
+
+## 5. assets/scripts/map/MapRenderer.ts
+
+不修改该文件。render() 原本就调用 resolver.resolve(map,x,y)，因此第 4 节更新后会自然取得 Grass 边角。
+
+getOrCreateFrame() 继续调用 getAtlasRect(visual)；Map<TileVisual, SpriteFrame> 缓存仍适用。UITransform 保持 GRID_RENDER_SIZE，Sprite CUSTOM、格点位置均保持原样。
+
+## 6. assets/scripts/map/MainMapController.ts
+
+只调整 tile 相关 import 与已有 loadAtlasSpriteFrame()。
+
+TerrainAtlas import 只保留 TERRAIN_SPRITE_FRAME_UUID。loadAtlasSpriteFrame() 替换为：
 
 ```ts
 private loadAtlasSpriteFrame(): Promise<SpriteFrame> {
@@ -116,27 +166,23 @@ private loadAtlasSpriteFrame(): Promise<SpriteFrame> {
 }
 ```
 
-原因仅是保证图片与切片坐标一致。加载失败直接报错，不拿新坐标裁旧图片；不新增加载类、profile 或初始化流程。
+保持 bootstrap() 调用方式与 new MapRenderer(tileRoot, atlasSpriteFrame) 不变。仅移除旧图回退，防止错误坐标组合。
 
-## 3. 修改 assets/art/terrain/terrain2.png.meta
+## 7. assets/art/terrain/terrain2.png.meta
 
-使用仓库已有 terrain2.png，不复制、不重命名图片。
+使用已有 terrain2.png；保持图片及子资源 UUID、576×1120 尺寸。
 
-仅调整与瓦片采样相关的导入设置：
+- minfilter、magfilter 改 nearest；mipfilter 保持 none。
+- sprite-frame 的 packable 改 false。
+- 在 Creator 确认整图裁切、原点为 0、无旋转，避免裁边改变上述整图坐标。
 
-- texture 的 minfilter、magfilter：linear 改为 nearest。
-- mipfilter 保持 none。
-- sprite-frame 的 packable 改为 false，保持固定整图坐标。
-- 保持 UUID、576×1120 尺寸、原点、无旋转；在 Creator 内确认整图裁切，避免自动裁透明边改变坐标基准。
+## 8. 一致性检查与换图验收
 
-由 Creator 保存需要更新的导入字段，不重建 UUID。
+实际修改五个现有文件：MapTypes.ts、TerrainAtlas.ts、MapResolver.ts、MainMapController.ts、terrain2.png.meta。
 
-## 4. 换图验收
-
-1. 启动后，草地显示新草纹，泥地显示底部棕色地面，没有透明洞、黑块或误裁的崖壁。
-2. 每格仍为 32×32，贴图位置与现有地图格点一致。
-3. 新图正常加载；不存在旧 FALLBACK_UUID 引用。
-4. 检查草地、泥地各自连续排列及相互交界，接受本次明确的硬边效果。
-5. 本次实施仅修改上述三个现有文件；不改 MapRenderer、MapResolver、MapTypes 和 GridConfig，不新增测试文件或其他模块。
-
-本次文档更新不代表上述代码已经执行。
+1. 全仓搜索 TileVisual.Grass 与 Dirt 的八种旧边角引用，逐处核对；生产脚本不能留下旧枚举使用。注意 GrassCenter 等新名称也会匹配普通前缀搜索，不能误删。
+2. TerrainType、StaticMap、世界格尺寸不变；Grass 显示草，Dirt 显示棕色地面，不能通过交换地形数据修正画面。
+3. 检查矩形草地区域：中心、上下左右、四角分别读取表中对应切片；泥地一律取 (0,31)。
+4. 检查底边取 row=34，没有取到 row=33 或左侧透明区；检查顶底、左右没有颠倒。
+5. 检查现有静态地图上的草泥边界，记录九宫格无法表达的凹角，不能用错误的凸角声称已解决。
+6. 确认无旧 fallback 引用、类型检查通过、每格仍为 32×32。新图片加载失败时明确报错。
