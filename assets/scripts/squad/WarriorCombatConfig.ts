@@ -1,4 +1,7 @@
+/**
+ * 战士战斗配置 移动速度在这里修改
+ */
 export const SWORD_WARRIOR_MAX_HEALTH = 100;
 export const SWORD_WARRIOR_ATTACK_DAMAGE = 10;
 export const SWORD_WARRIOR_ATTACK_INTERVAL_SECONDS = 1;
-export const SWORD_WARRIOR_MOVE_SPEED_CELLS_PER_SECOND = 8;
+export const SWORD_WARRIOR_MOVE_SPEED_CELLS_PER_SECOND = 3;

@@ -20,7 +20,7 @@ export class SquadMotor extends Component {
     private currentGridPoint: GridPoint = { x: 0, y: 0 };
     private waypoints: GridPoint[] = [];
     private waypointIndex = 0;
-    private moveSpeedCellsPerSecond = 8;
+    private moveSpeedCellsPerSecond = 3;
     private mapWidth = 0;
     private mapHeight = 0;
     private warriors: WarriorAnimator[] = [];
@@ -36,7 +36,7 @@ export class SquadMotor extends Component {
         this.mapWidth = config.mapWidth;
         this.mapHeight = config.mapHeight;
         this.warriors = config.warriors;
-        this.moveSpeedCellsPerSecond = config.moveSpeedCellsPerSecond ?? 8;
+        this.moveSpeedCellsPerSecond = config.moveSpeedCellsPerSecond ?? 3;
         this.waypoints = [];
         this.waypointIndex = 0;
         this.arrivedPending = false;

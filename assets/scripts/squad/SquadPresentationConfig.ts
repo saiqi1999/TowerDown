@@ -12,8 +12,8 @@ export const SQUAD_PRESENTATION = {
     // Relative to the original GRID_RENDER_SCALE; 16px sprite instead of 32px.
     warriorScaleMultiplier: 0.5,
     // 0.6 cells = 19.2px between centers on the current 32px grid.
-    formationSpacingCells: 0.6,
+    formationSpacingCells: 0.3,
     idleWaitMinSeconds: 0.8,
     idleWaitMaxSeconds: 2.5,
-    idleMinTravelCells: 1,
+    idleMinTravelCells: 2,
 } as const;
