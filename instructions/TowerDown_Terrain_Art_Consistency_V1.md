@@ -33,15 +33,15 @@ TILE_RENDER_SIZE 继续使用 GRID_RENDER_SIZE。新图以 32×32 源像素裁�
 ```ts
 const ATLAS_CELLS: Record<TileVisual, AtlasCell> = {
     [TileVisual.Grass]: { column: 3, row: 33 },
-    [TileVisual.DirtTopLeft]: { column: 1, row: 1 },
-    [TileVisual.DirtTop]: { column: 1, row: 1 },
-    [TileVisual.DirtTopRight]: { column: 1, row: 1 },
-    [TileVisual.DirtLeft]: { column: 1, row: 1 },
-    [TileVisual.DirtCenter]: { column: 1, row: 1 },
-    [TileVisual.DirtRight]: { column: 1, row: 1 },
-    [TileVisual.DirtBottomLeft]: { column: 1, row: 1 },
-    [TileVisual.DirtBottom]: { column: 1, row: 1 },
-    [TileVisual.DirtBottomRight]: { column: 1, row: 1 },
+    [TileVisual.DirtTopLeft]: { column: 0, row: 31 },
+    [TileVisual.DirtTop]: { column: 0, row: 31 },
+    [TileVisual.DirtTopRight]: { column: 0, row: 31 },
+    [TileVisual.DirtLeft]: { column: 0, row: 31 },
+    [TileVisual.DirtCenter]: { column: 0, row: 31 },
+    [TileVisual.DirtRight]: { column: 0, row: 31 },
+    [TileVisual.DirtBottomLeft]: { column: 0, row: 31 },
+    [TileVisual.DirtBottom]: { column: 0, row: 31 },
+    [TileVisual.DirtBottomRight]: { column: 0, row: 31 },
 };
 ```
 
@@ -50,11 +50,29 @@ const ATLAS_CELLS: Record<TileVisual, AtlasCell> = {
 | 类型 | x | y | width | height |
 | --- | --- | --- | --- | --- |
 | 草地 | 96 | 1056 | 32 | 32 |
-| 泥地 | 32 | 32 | 32 | 32 |
+| 泥地（底部棕色地面） | 0 | 992 | 32 | 32 |
 
-已检查仓库 terrain2.png：两块区域 alpha 全为 255，分别为纯草地内部和高台平面顶面，不包含透明空洞、崖沿或侧壁。
+取图限定在图片底部平面地表区，不使用顶部高台。Grass=(3,33) 是底部草坪内部；DirtCenter=(0,31) 是底部棕色地面。像素原点均从整张 PNG 左上计算，不是从底部素材区重新计数。
 
-**本表的实际效果是平面草地与泥地硬边拼接。** 九种泥地外观暂时共用同一切片，因此不会保留旧图的泥地边缘花纹，也不包含悬崖。这是本次最小换图的明确显示范围，不能描述成已完成新图所有边角的映射。
+**边角素材限制：** 底部中间图案是棕色地面包围绿色草坪。其左上、上边、右上等切片是草坪向棕色地面过渡，不是棕色泥地向草地过渡。现有 MapResolver 是在 Dirt 格子上选择 DirtTop/Left 等，直接将这些草坪边角填入 Dirt 枚举会造成材质内外反转。
+
+因此，上表只有 Grass 和 DirtCenter 是对应材质的正式取图；八种 Dirt 边角共用 (0,31) 是明确的纯地面回退，不代表它们在素材中具有独立匹配块。当前保持解析逻辑不变的换图仍为硬边。不能把此表称为完整边角替换。要保留自然泥地边缘，需要提供方向匹配的泥地边角素材；不能仅靠重新填写坐标解决。
+
+供核对的底部草坪切片如下（仅解释图集，不写入 Dirt 的映射）：
+
+| 草坪外观 | column | row | 像素 x,y |
+| --- | --- | --- | --- |
+| 上左角 | 2 | 31 | 64,992 |
+| 上边 | 3 | 31 | 96,992 |
+| 上右角 | 4 | 31 | 128,992 |
+| 左边 | 2 | 32 | 64,1024 |
+| 中心 | 3 | 32 | 96,1024 |
+| 右边 | 4 | 32 | 128,1024 |
+| 下左角 | 2 | 34 | 64,1088 |
+| 下边 | 3 | 34 | 96,1088 |
+| 下右角 | 4 | 34 | 128,1088 |
+
+原草坪图案高四格，row=33 是另一行中段；不能直接把它误作下边。列 0～1 的 row=33 区域透明，也不能取作地面。
 
 ### 1.3 两个方法保持原样
 
@@ -115,7 +133,7 @@ private loadAtlasSpriteFrame(): Promise<SpriteFrame> {
 
 ## 4. 换图验收
 
-1. 启动后，草地显示新草纹，泥地显示浅灰褐色顶面，没有透明洞、黑块或误裁的崖壁。
+1. 启动后，草地显示新草纹，泥地显示底部棕色地面，没有透明洞、黑块或误裁的崖壁。
 2. 每格仍为 32×32，贴图位置与现有地图格点一致。
 3. 新图正常加载；不存在旧 FALLBACK_UUID 引用。
 4. 检查草地、泥地各自连续排列及相互交界，接受本次明确的硬边效果。
