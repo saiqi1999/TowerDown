@@ -9,6 +9,8 @@
  * 不拥有 Blueprint Card 布局、不拥有 WorldViewport 输入状态、
  * 不执行 Building Placement 和 Camera UX 规则。
  */
+import { BuildingRelocationController } from '../building/BuildingRelocationController';
+import { BuildingRelocationService } from '../building/BuildingRelocationService';
 import { generateFormationOffsets, getFormationBounds } from '../squad/SquadFormationLayout';
 import {
     _decorator,
@@ -514,6 +516,7 @@ export class MainMapController extends Component {
             ghost,
         );
         buildToolController.setup(placementTool);
+        let relocation: BuildingRelocationController | null = null;
         const transition = new FloorTransitionController({
             counter: enemyKillCounter,
             baseInteraction,
@@ -638,12 +641,12 @@ export class MainMapController extends Component {
             panel: basePanel,
             setBaseSpriteFrame: (frame) => this.setBaseSpriteFrame(frame),
             onOpenStateChanged: (open) => {
-                if (open) buildToolController.cancel();
+                if (open) { buildToolController.cancel(); relocation?.cancel(); }
                 hoverInfo.setSuspended(open);
             },
         });
-        buildToolController.setInputBlockedPredicate(() => baseInteraction.isOpen());
-        commandController.setInputBlockedPredicate(() => buildToolController.isActive() || baseInteraction.isOpen() || transition.isTransitioning());
+        buildToolController.setInputBlockedPredicate(() => baseInteraction.isOpen() || transition.isTransitioning() || !!relocation?.isTracking());
+        commandController.setInputBlockedPredicate(() => buildToolController.isActive() || baseInteraction.isOpen() || transition.isTransitioning() || !!relocation?.isTracking());
         const cardStripNode = this.getOrCreateChild(hudRoot, 'BlueprintCardStrip');
         const cardStrip = new BuildCardStripController(
             cardStripNode,
@@ -669,7 +672,7 @@ export class MainMapController extends Component {
             interactionBrightnessMaterial,
         );
         roster.setup();
-        selection.setBeforeUserSelection(() => buildToolController.cancel());
+        selection.setBeforeUserSelection(() => { buildToolController.cancel(); relocation?.cancel(); });
         selection.setInputBlockedPredicate(() => baseInteraction.isOpen() || transition.isTransitioning());
         const interactionUiNodes = [cardStripNode, rosterNode, basePanelRoot];
         buildToolController.setInputExcludedNodes(interactionUiNodes);
@@ -687,6 +690,53 @@ export class MainMapController extends Component {
             viewportWidth: hudTransform.contentSize.width,
             viewportHeight: hudTransform.contentSize.height,
             excludedUiNodes: interactionUiNodes,
+        });
+        const relocationNode = this.getOrCreateChild(mapRoot, 'BuildingRelocationController');
+        relocation = relocationNode.getComponent(BuildingRelocationController)
+            ?? relocationNode.addComponent(BuildingRelocationController);
+        const relocationGhost = new BuildingGhostView(
+            this.getOrCreateChild(worldObjectRoot, 'RelocationPreviewRoot'), buildingFactory,
+            STATIC_MAP[0]?.length ?? 0, STATIC_MAP.length,
+        );
+        const relocationService = new BuildingRelocationService(
+            buildingRegistry, validator, worldCellGrid, navigationGrid,
+            (candidate) => {
+                const newlyBlocked = (point: { x: number; y: number }) => {
+                    const x = Math.floor(point.x), y = Math.floor(point.y);
+                    return navigationGrid.isWalkable(x, y) && !candidate.isWalkable(x, y);
+                };
+                const candidateNavigator = new WorldNavigator(candidate, new AStarPathfinder(), new TargetApproachResolver());
+                const routes: Array<() => void> = [];
+                for (const handle of squadHandles.values()) {
+                    const center = handle.motor.getGridPosition();
+                    if (newlyBlocked(center)) return null;
+                    for (let i = 0; i < handle.warriorMotors.length; i += 1) {
+                        if (!handle.warriorHealth[i]?.isDepleted()
+                            && newlyBlocked(handle.warriorMotors[i]!.getWorldGridPosition(center))) return null;
+                    }
+                    const destination = handle.motor.getDestinationCell();
+                    if (destination) {
+                        const path = candidateNavigator.findPathToCell(center, destination);
+                        if (!path) return null;
+                        routes.push(() => handle.motor.setPath(path));
+                    }
+                }
+                for (const group of this.monsterRegistry?.getAll() ?? []) {
+                    for (const monster of group.getAliveMonsters()) {
+                        if (newlyBlocked(monster.getWorldGridPosition())) return null;
+                    }
+                }
+                return () => { for (const apply of routes) apply(); };
+            },
+        );
+        relocation.setup({
+            registry: buildingRegistry,
+            service: relocationService,
+            projector: new GridPointerProjector(mapRoot, camera, STATIC_MAP[0]?.length ?? 0, STATIC_MAP.length),
+            ghost: relocationGhost,
+            excludedUi: interactionUiNodes,
+            isBlocked: () => buildToolController.isActive() || baseInteraction.isOpen() || transition.isTransitioning(),
+            onDraggingChanged: (active) => hoverInfo.setSuspended(active || baseInteraction.isOpen()),
         });
         for (const definitionId of ['storage_house_01', 'lumberjack_house_01', 'barracks_01', 'blacksmith_house_01']) {
             blueprintInventory.unlock(definitionId);

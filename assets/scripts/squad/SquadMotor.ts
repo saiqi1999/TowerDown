@@ -110,6 +110,11 @@ export class SquadMotor extends Component {
         this.playIdle(this.lastDirection);
     }
 
+    public getDestinationCell(): GridCell | null {
+        const last = this.waypoints[this.waypoints.length - 1];
+        return this.isMoving() && last ? { x: Math.floor(last.x), y: Math.floor(last.y) } : null;
+    }
+
     public isMoving(): boolean {
         return this.waypointIndex < this.waypoints.length;
     }

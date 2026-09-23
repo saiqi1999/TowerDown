@@ -53,7 +53,10 @@ export class BuildingRuntimeRegistry {
         this.listeners.add(listener);
         return () => this.listeners.delete(listener);
     }
+    public notifyRelocated(): void { this.notify(); }
     private notify(): void {
-        for (const listener of this.listeners) listener();
+        for (const listener of this.listeners) {
+            try { listener(); } catch (error) { console.error("[BuildingRuntimeRegistry] listener failed", error); }
+        }
     }
 }

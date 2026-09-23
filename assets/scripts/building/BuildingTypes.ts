@@ -48,7 +48,7 @@ export interface BuildingInstanceData {
 }
 export enum PlacementInvalidReason {
     None = 0, PointerOutsideMap = 1, OutOfBounds = 2, TerrainNotAllowed = 3,
-    Occupied = 4, InsufficientResources = 5, DefinitionMissing = 6, SquadCapacity = 7,
+    Occupied = 4, InsufficientResources = 5, DefinitionMissing = 6, SquadCapacity = 7, RelocationBlocked = 8,
 }
 export interface BuildingPlacementSnapshot {
     definitionId: string; gridX: number; gridY: number; footprint: readonly GridCell[];

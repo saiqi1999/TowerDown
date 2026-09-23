@@ -31,6 +31,10 @@ export class FeedbackClickTarget extends Component {
         this.node.on(Node.EventType.TOUCH_END, this.onTouchEnd, this);
     }
 
+    public cancelPendingClick(): void {
+        this.tracking = false;
+    }
+
     protected onDisable(): void {
         this.tracking = false;
     }

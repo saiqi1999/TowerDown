@@ -16,6 +16,7 @@ import {
     getBuildingFootprint,
     PlacementInvalidReason,
     type BuildingDefinition,
+    type BuildingInstanceData,
     type BuildingPlacementSnapshot,
     type ResourceCost,
 } from './BuildingTypes';
@@ -34,6 +35,23 @@ export class BuildingPlacementValidator {
         private readonly costResolver: BuildingCostResolver = (definition) => definition.cost,
         private readonly placementGate: BuildingPlacementGate = () => ({ allowed: true }),
     ) {}
+
+    public validateRelocation(instance: BuildingInstanceData, gridX: number, gridY: number): BuildingPlacementSnapshot {
+        const definition = getBuildingDefinition(instance.definitionId);
+        if (!definition) return this.validate(instance.definitionId, gridX, gridY);
+        const footprint = getBuildingFootprint(definition, gridX, gridY);
+        const ownCells = new Set(this.worldCellGrid.getOwnerCells(instance.id).map(c => `${c.x},${c.y}`));
+        const insideMap = Number.isInteger(gridX) && Number.isInteger(gridY)
+            && footprint.every(c => this.worldCellGrid.isInside(c.x, c.y));
+        const terrainValid = insideMap && footprint.every(c => definition.allowedTerrain.includes(this.terrainMap[c.y]?.[c.x]));
+        const occupancyValid = insideMap && footprint.every(c => ownCells.has(`${c.x},${c.y}`) || !this.worldCellGrid.isBlocked(c.x, c.y));
+        const reason = !insideMap ? PlacementInvalidReason.OutOfBounds
+            : !terrainValid ? PlacementInvalidReason.TerrainNotAllowed
+            : !occupancyValid ? PlacementInvalidReason.Occupied : PlacementInvalidReason.None;
+        // Relocation never charges resources or consumes another squad/building slot.
+        return { definitionId: instance.definitionId, gridX, gridY, footprint, insideMap, terrainValid,
+            occupancyValid, affordable: true, canPlace: reason === PlacementInvalidReason.None, reason };
+    }
 
     public validate(definitionId: string, gridX: number, gridY: number): BuildingPlacementSnapshot {
         const definition = getBuildingDefinition(definitionId);
