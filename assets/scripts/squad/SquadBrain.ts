@@ -1,5 +1,5 @@
 import { _decorator, Component, randomRange } from 'cc';
-import { type GridCell, type GridPoint } from '../navigation/NavigationTypes';
+import { type GridCell } from '../navigation/NavigationTypes';
 import { WorldNavigator } from '../navigation/WorldNavigator';
 import { type WorldObjectData, WorldObjectKind } from '../world/WorldObjectTypes';
 import { WorldObjectRuntimeRegistry } from '../world/WorldObjectRuntimeRegistry';
@@ -9,6 +9,9 @@ import { WarriorAnimator } from './WarriorAnimator';
 import { SquadMotor } from './SquadMotor';
 import { type MonsterRuntimeRegistry } from '../monster/MonsterRuntimeRegistry';
 import { type SquadCombatController } from './SquadCombatController';
+
+import { TerrainType, type TerrainMap } from '../map/MapTypes';
+import { SQUAD_PRESENTATION } from './SquadPresentationConfig';
 
 const { ccclass } = _decorator;
 
@@ -24,14 +27,6 @@ export enum SquadBrainState {
     ReturnHome = 7,
 }
 
-export interface SquadHomeBounds {
-    left: number;
-    right: number;
-    bottom: number;
-    mapWidth: number;
-    mapHeight: number;
-}
-
 export interface SquadBrainConfig {
     squadId: string;
     homeObjectId: string;
@@ -42,7 +37,8 @@ export interface SquadBrainConfig {
     worldObjectRegistry: WorldObjectRuntimeRegistry;
     warriors: WarriorAnimator[];
     homeRestCell: GridCell;
-    homeBounds: SquadHomeBounds;
+    terrainMap: TerrainMap;
+    hasLivingMembers: () => boolean;
     monsterRegistry?: MonsterRuntimeRegistry;
     onGuardEncounterRequested?: (squadId: string, guardedObjectId: string) => boolean;
     onGuardRetreatRequested?: (squadId: string, guardedObjectId: string) => void;
@@ -64,7 +60,8 @@ export class SquadBrain extends Component {
     private worldObjectRegistry!: WorldObjectRuntimeRegistry;
     private warriors: WarriorAnimator[] = [];
     private homeRestCell!: GridCell;
-    private homeBounds!: SquadHomeBounds;
+    private terrainMap!: TerrainMap;
+    private hasLivingMembers: () => boolean = () => false;
     private initialized = false;
     private monsterRegistry: MonsterRuntimeRegistry | null = null;
     private onGuardEncounterRequested: ((squadId: string, guardedObjectId: string) => boolean) | null = null;
@@ -80,14 +77,15 @@ export class SquadBrain extends Component {
         this.worldObjectRegistry = config.worldObjectRegistry;
         this.warriors = config.warriors;
         this.homeRestCell = config.homeRestCell;
-        this.homeBounds = config.homeBounds;
+        this.terrainMap = config.terrainMap;
+        this.hasLivingMembers = config.hasLivingMembers;
         this.monsterRegistry = config.monsterRegistry ?? null;
         this.onGuardEncounterRequested = config.onGuardEncounterRequested ?? null;
         this.onGuardRetreatRequested = config.onGuardRetreatRequested ?? null;
         this.combat = config.combat ?? null;
         this.guardEncounterRequested = false;
         this.initialized = true;
-        // 出生后先进入返家附近的待机逻辑，保持基地门口活动的基本行为。
+        // 出生后先停留，随后在可达的泥土地块间按正常路径巡游。
         this.enterHomeIdle();
     }
 
@@ -422,10 +420,23 @@ export class SquadBrain extends Component {
             return;
         }
 
-        // 待机结束后只在基地前方小范围巡逻，避免把 HomeIdle 演化成新的自由探索逻辑。
-        const target = this.chooseRandomWanderTarget();
+        if (!this.hasLivingMembers()) {
+            this.enterHomeIdle();
+            return;
+        }
+        const path = this.navigator.findRandomPathToTerrain(
+            this.motor.getGridPosition(),
+            this.terrainMap,
+            TerrainType.Dirt,
+            SQUAD_PRESENTATION.idleMinTravelCells,
+        );
+        if (!path) {
+            // No usable dirt: wait before trying again instead of walking through buildings.
+            this.enterHomeIdle();
+            return;
+        }
         this.state = SquadBrainState.Wander;
-        this.motor.setWaypoints([target]);
+        this.motor.setPath(path);
     }
 
     private enterHomeIdle(): void {
@@ -433,7 +444,10 @@ export class SquadBrain extends Component {
         this.activeTargetId = null;
         this.pendingTargetId = null;
         this.pendingReturnHome = false;
-        this.idleTimer = randomRange(0.8, 2.5);
+        this.idleTimer = randomRange(
+            SQUAD_PRESENTATION.idleWaitMinSeconds,
+            SQUAD_PRESENTATION.idleWaitMaxSeconds,
+        );
         // 进入 Idle 时主动停掉 Squad root 的路径，保证 Wander/ReturnHome/MoveToTarget 能彼此打断。
         this.motor.stop();
 
@@ -467,29 +481,4 @@ export class SquadBrain extends Component {
         return target;
     }
 
-    private chooseRandomWanderTarget(): GridPoint {
-        const minX = Math.max(0.5, this.homeBounds.left - 1.5);
-        const maxX = Math.min(this.homeBounds.mapWidth - 0.5, this.homeBounds.right + 1.5);
-        const minY = Math.max(0.5, this.homeBounds.bottom + 0.5);
-        const maxY = Math.min(this.homeBounds.mapHeight - 0.5, this.homeBounds.bottom + 3.5);
-        const current = this.motor.getGridPosition();
-
-        for (let attempt = 0; attempt < 6; attempt += 1) {
-            const candidate = {
-                x: randomRange(minX, maxX),
-                y: randomRange(minY, maxY),
-            };
-            const dx = candidate.x - current.x;
-            const dy = candidate.y - current.y;
-            // 过滤几乎原地不动的点，避免 HomeIdle 看起来像没有触发 Wander。
-            if (Math.sqrt(dx * dx + dy * dy) > 0.2) {
-                return candidate;
-            }
-        }
-
-        return {
-            x: randomRange(minX, maxX),
-            y: randomRange(minY, maxY),
-        };
-    }
 }

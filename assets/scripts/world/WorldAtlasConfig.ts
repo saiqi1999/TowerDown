@@ -12,6 +12,8 @@ export interface WorldVisualDefinition {
     row: number;
     w: number;
     h: number;
+    // Atlas crop can differ from the gameplay footprint (legacy base artwork).
+    sourceH?: number;
 }
 
 export interface WorldVisualRect {
@@ -30,7 +32,8 @@ export const WORLD_VISUALS: Record<WorldVisualId, WorldVisualDefinition> = {
         col: 0,
         row: 0,
         w: 4,
-        h: 3,
+        h: 4,
+        sourceH: 3,
     },
     [WorldVisualId.TreeGreen]: {
         atlas: WorldAtlasKey.Nature,
@@ -78,6 +81,6 @@ export function getWorldVisualRect(visualId: WorldVisualId): WorldVisualRect {
         x: definition.col * GRID_SOURCE_SIZE,
         y: definition.row * GRID_SOURCE_SIZE,
         width: definition.w * GRID_SOURCE_SIZE,
-        height: definition.h * GRID_SOURCE_SIZE,
+        height: (definition.sourceH ?? definition.h) * GRID_SOURCE_SIZE,
     };
 }

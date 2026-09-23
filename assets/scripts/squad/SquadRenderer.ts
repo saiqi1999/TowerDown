@@ -29,7 +29,9 @@ import { type WorldNavigator } from '../navigation/WorldNavigator';
 import { WorldObjectRuntimeRegistry } from '../world/WorldObjectRuntimeRegistry';
 import { getWorldVisualDefinition } from '../world/WorldAtlasConfig';
 import { type WorldObjectData } from '../world/WorldObjectTypes';
-import { SquadBrain, type SquadHomeBounds } from './SquadBrain';
+import { SquadBrain } from './SquadBrain';
+import { type TerrainMap } from '../map/MapTypes';
+import { SQUAD_PRESENTATION } from './SquadPresentationConfig';
 import { InteractionSlotResolver } from './InteractionSlotResolver';
 import { SquadEngagementController } from './SquadEngagementController';
 import { SquadMotor } from './SquadMotor';
@@ -37,7 +39,7 @@ import {
     type SquadRuntimeHandle,
     type SquadSpawnData,
 } from './SquadTypes';
-import { assignFormation } from './SquadFormationLayout';
+import { assignFormation, generateFormationOffsets, getFormationBounds } from './SquadFormationLayout';
 import { WarriorAnimator } from './WarriorAnimator';
 import { type MonsterRuntimeRegistry } from '../monster/MonsterRuntimeRegistry';
 import { WarriorCombatController } from './WarriorCombatController';
@@ -89,6 +91,7 @@ export class SquadRenderer {
         private readonly friendlyHealthBarTexture: Texture2D,
         private readonly hitFlashMaterial: Material,
         private readonly damagePopupSpawner: DamagePopupSpawner,
+        private readonly terrainMap: TerrainMap,
         private readonly monsterRegistry?: MonsterRuntimeRegistry,
         private readonly playerCombatModifiers?: CombatStatModifierRegistry,
     ) {}
@@ -181,10 +184,16 @@ export class SquadRenderer {
         const homeLeft = homeObject.gridX;
         const homeRight = homeObject.gridX + homeVisual.w;
         const homeBottom = homeObject.gridY + homeVisual.h;
-        const spawnPoint = squad.spawnPoint ?? {
+        const formationBounds = getFormationBounds(generateFormationOffsets(squad.memberCount));
+        const preferredSpawn = squad.spawnPoint ?? {
             x: (homeLeft + homeRight) / 2,
             y: homeBottom + 1,
         };
+        // A taller base must not cover the front rank of the legacy base-side spawn.
+        const spawnPoint = { ...preferredSpawn };
+        if (spawnPoint.x >= homeLeft && spawnPoint.x < homeRight) {
+            spawnPoint.y = Math.max(spawnPoint.y, homeBottom + 0.5 - formationBounds.minY);
+        }
         const homeRestCell = this.navigator.findNearestWalkableCellInRow(
             spawnPoint.x,
             Math.floor(spawnPoint.y),
@@ -255,13 +264,6 @@ export class SquadRenderer {
             combatEventHub: this.combatEventHub,
         });
         const brain = squadNode.addComponent(SquadBrain);
-        const homeBounds: SquadHomeBounds = {
-            left: homeLeft,
-            right: homeRight,
-            bottom: homeBottom,
-            mapWidth,
-            mapHeight,
-        };
         brain.setup({
             squadId: squad.id,
             homeObjectId: squad.homeObjectId,
@@ -271,7 +273,8 @@ export class SquadRenderer {
             worldObjectRegistry: this.worldObjectRegistry,
             warriors,
             homeRestCell,
-            homeBounds,
+            terrainMap: this.terrainMap,
+            hasLivingMembers: () => warriorHealth.some((health) => !health.isDepleted()),
             monsterRegistry: this.monsterRegistry,
             combat,
         });
@@ -304,7 +307,8 @@ export class SquadRenderer {
         const warriorNode = new Node(`Warrior_${index}`);
         warriorNode.setParent(parent);
         warriorNode.layer = parent.layer;
-        warriorNode.setScale(GRID_RENDER_SCALE, GRID_RENDER_SCALE, 1);
+        const visualScale = GRID_RENDER_SCALE * SQUAD_PRESENTATION.warriorScaleMultiplier;
+        warriorNode.setScale(visualScale, visualScale, 1);
         warriorNode.addComponent(UITransform).setContentSize(WARRIOR_FRAME_SIZE, WARRIOR_FRAME_SIZE);
         const sprite = warriorNode.addComponent(Sprite);
         sprite.sizeMode = Sprite.SizeMode.CUSTOM;

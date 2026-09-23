@@ -1,3 +1,4 @@
+import { TerrainType, type TerrainMap } from '../map/MapTypes';
 import { type WorldObjectData } from '../world/WorldObjectTypes';
 import { AStarPathfinder } from './AStarPathfinder';
 import { NavigationGrid } from './NavigationGrid';
@@ -57,6 +58,35 @@ export class WorldNavigator {
         }
 
         return this.pathfinder.findPath(this.grid, startCell, target);
+    }
+
+    /** Choose a random reachable terrain cell using the same A* as player commands. */
+    public findRandomPathToTerrain(
+        start: GridPoint,
+        terrain: TerrainMap,
+        type: TerrainType,
+        minDistance: number,
+        random: () => number = Math.random,
+    ): GridCell[] | null {
+        const candidates: GridCell[] = [];
+        for (let y = 0; y < terrain.length; y += 1) {
+            for (let x = 0; x < terrain[y].length; x += 1) {
+                if (terrain[y][x] !== type || !this.grid.isWalkable(x, y)) continue;
+                if (Math.floor(start.x) === x && Math.floor(start.y) === y) continue;
+                if (Math.hypot(x + 0.5 - start.x, y + 0.5 - start.y) < minDistance) continue;
+                candidates.push({ x, y });
+            }
+        }
+        // Shuffle once, then try each at most once: isolated dirt never stalls the brain.
+        for (let i = candidates.length - 1; i > 0; i -= 1) {
+            const j = Math.floor(random() * (i + 1));
+            [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+        }
+        for (const candidate of candidates) {
+            const path = this.findPathToCell(start, candidate);
+            if (path && path.length > 0) return path;
+        }
+        return null;
     }
 
     public findNearestWalkableCellInRow(

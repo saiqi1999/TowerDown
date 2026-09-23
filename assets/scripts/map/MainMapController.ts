@@ -9,6 +9,7 @@
  * 不拥有 Blueprint Card 布局、不拥有 WorldViewport 输入状态、
  * 不执行 Building Placement 和 Camera UX 规则。
  */
+import { generateFormationOffsets, getFormationBounds } from '../squad/SquadFormationLayout';
 import {
     _decorator,
     assetManager,
@@ -392,6 +393,7 @@ export class MainMapController extends Component {
             friendlyHealthBarTexture,
             hitFlashMaterial,
             damagePopupSpawner,
+            STATIC_MAP,
             this.monsterRegistry,
             playerCombatModifiers,
         );
@@ -611,8 +613,13 @@ export class MainMapController extends Component {
                     const baseX = base?.gridX ?? 18;
                     const baseY = base?.gridY ?? 10;
                     let recoveryIndex = 0;
-                    for (const [id] of squadHandles) {
-                        const point = { x: baseX + 1 + recoveryIndex * 2, y: baseY + 4 };
+                    const baseHeight = base ? getWorldVisualDefinition(base.visualId).h : 4;
+                    for (const [id, handle] of squadHandles) {
+                        const bounds = getFormationBounds(generateFormationOffsets(handle.warriorMotors.length));
+                        const point = {
+                            x: baseX + 1 + recoveryIndex * 2,
+                            y: baseY + baseHeight + 0.5 - bounds.minY,
+                        };
                         recoveryIndex += 1;
                         points.set(id, point);
                         homeCells.set(id, { x: Math.floor(point.x), y: Math.floor(point.y) });

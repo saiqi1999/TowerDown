@@ -12,12 +12,14 @@
  */
 import { type GridPoint } from '../navigation/NavigationTypes';
 
-export const DEFAULT_SQUAD_FORMATION_SPACING = 1.1;
+import { SQUAD_PRESENTATION } from './SquadPresentationConfig';
+
+export const DEFAULT_SQUAD_FORMATION_SPACING = SQUAD_PRESENTATION.formationSpacingCells;
 export const MAX_SQUAD_FORMATION_MEMBERS = 16;
 
 export function generateFormationOffsets(
     count: number,
-    spacing = DEFAULT_SQUAD_FORMATION_SPACING,
+    spacing: number = DEFAULT_SQUAD_FORMATION_SPACING,
 ): GridPoint[] {
     if (!Number.isInteger(count) || count < 0 || count > MAX_SQUAD_FORMATION_MEMBERS) {
         throw new Error(`[SquadFormationLayout] invalid member count: ${count}`);
@@ -44,7 +46,7 @@ export function generateFormationOffsets(
 
 export function assignFormation(
     memberIds: readonly string[],
-    spacing = DEFAULT_SQUAD_FORMATION_SPACING,
+    spacing: number = DEFAULT_SQUAD_FORMATION_SPACING,
 ): ReadonlyMap<string, GridPoint> {
     const uniqueIds = new Set(memberIds);
     if (uniqueIds.size !== memberIds.length) {
