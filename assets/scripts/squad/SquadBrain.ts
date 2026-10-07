@@ -9,7 +9,7 @@
  * 不处理输入绘制、不计算局部战斗站位、不直接执行资源扣除或伤害。
  */
 import { _decorator, Component, randomRange } from 'cc';
-import { type GridCell } from '../navigation/NavigationTypes';
+import { type GridPoint } from '../navigation/NavigationTypes';
 import { WorldNavigator } from '../navigation/WorldNavigator';
 import { type WorldObjectData, WorldObjectKind } from '../world/WorldObjectTypes';
 import { WorldObjectRuntimeRegistry } from '../world/WorldObjectRuntimeRegistry';
@@ -46,7 +46,7 @@ export interface SquadBrainConfig {
     navigator: WorldNavigator;
     worldObjectRegistry: WorldObjectRuntimeRegistry;
     warriors: WarriorAnimator[];
-    homeRestCell: GridCell;
+    homeRestPoint: GridPoint;
     terrainMap: TerrainMap;
     hasLivingMembers: () => boolean;
     monsterRegistry?: MonsterRuntimeRegistry;
@@ -70,7 +70,7 @@ export class SquadBrain extends Component {
     private navigator!: WorldNavigator;
     private worldObjectRegistry!: WorldObjectRuntimeRegistry;
     private warriors: WarriorAnimator[] = [];
-    private homeRestCell!: GridCell;
+    private homeRestPoint!: GridPoint;
     private terrainMap!: TerrainMap;
     private hasLivingMembers: () => boolean = () => false;
     private initialized = false;
@@ -87,7 +87,7 @@ export class SquadBrain extends Component {
         this.navigator = config.navigator;
         this.worldObjectRegistry = config.worldObjectRegistry;
         this.warriors = config.warriors;
-        this.homeRestCell = config.homeRestCell;
+        this.homeRestPoint = config.homeRestPoint;
         this.terrainMap = config.terrainMap;
         this.hasLivingMembers = config.hasLivingMembers;
         this.monsterRegistry = config.monsterRegistry ?? null;
@@ -175,7 +175,7 @@ export class SquadBrain extends Component {
         this.activeTargetId = target.id;
         this.guardEncounterRequested = false;
         this.state = SquadBrainState.MoveToTarget;
-        this.motor.setPath(pathResult.path);
+        this.motor.setWaypoints(pathResult.path);
         return { accepted: true };
     }
 
@@ -201,14 +201,14 @@ export class SquadBrain extends Component {
     public getState(): SquadBrainState {
         return this.state;
     }
-    public resetForFloor(homeRestCell: GridCell): void {
+    public resetForFloor(homeRestPoint: GridPoint): void {
         this.commandTargetId = null;
         this.activeTargetId = null;
         this.pendingTargetId = null;
         this.pendingReturnHome = false;
         this.queuedTargetIds = [];
         this.guardEncounterRequested = false;
-        this.homeRestCell = { ...homeRestCell };
+        this.homeRestPoint = { ...homeRestPoint };
         this.motor.stop();
         this.engagement.resetForFloor();
         this.combat?.resetForFloor();
@@ -235,7 +235,7 @@ export class SquadBrain extends Component {
 
         this.guardEncounterRequested = false;
         this.state = SquadBrainState.MoveToTarget;
-        this.motor.setPath(pathResult.path);
+        this.motor.setWaypoints(pathResult.path);
     }
 
     update(dt: number): void {
@@ -298,9 +298,9 @@ export class SquadBrain extends Component {
 
     private issueReturnHome(target: WorldObjectData): CommandResult {
         // Base 点击语义是“返家”，不是把基地当作一个普通互动目标。
-        const path = this.navigator.findPathToCell(
+        const path = this.navigator.findPathToPoint(
             this.motor.getGridPosition(),
-            this.homeRestCell,
+            this.homeRestPoint,
         );
         if (!path) {
             return {
@@ -320,7 +320,7 @@ export class SquadBrain extends Component {
 
         this.activeTargetId = target.id;
         this.state = SquadBrainState.ReturnHome;
-        this.motor.setPath(path);
+        this.motor.setWaypoints(path);
         return { accepted: true };
     }
 
@@ -425,7 +425,7 @@ export class SquadBrain extends Component {
             this.activeTargetId = target.id;
             this.pendingTargetId = null;
             this.state = SquadBrainState.MoveToTarget;
-            this.motor.setPath(pathResult.path);
+            this.motor.setWaypoints(pathResult.path);
             return;
         }
 
@@ -434,9 +434,9 @@ export class SquadBrain extends Component {
 
     private startReturnHomeFromCurrentPosition(): void {
         // ReturnHome 必须从 reform 后的实时位置重新求路，不能复用 reform 之前的旧路径。
-        const path = this.navigator.findPathToCell(
+        const path = this.navigator.findPathToPoint(
             this.motor.getGridPosition(),
-            this.homeRestCell,
+            this.homeRestPoint,
         );
         this.pendingReturnHome = false;
         this.pendingTargetId = null;
@@ -454,7 +454,7 @@ export class SquadBrain extends Component {
 
         this.activeTargetId = this.commandTargetId;
         this.state = SquadBrainState.ReturnHome;
-        this.motor.setPath(path);
+        this.motor.setWaypoints(path);
     }
 
     private updateHomeIdle(dt: number): void {
@@ -479,7 +479,7 @@ export class SquadBrain extends Component {
             return;
         }
         this.state = SquadBrainState.Wander;
-        this.motor.setPath(path);
+        this.motor.setWaypoints(path);
     }
 
     private enterHomeIdle(): void {

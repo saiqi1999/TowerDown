@@ -39,7 +39,7 @@ import {
     type SquadRuntimeHandle,
     type SquadSpawnData,
 } from './SquadTypes';
-import { assignFormation, generateFormationOffsets, getFormationBounds } from './SquadFormationLayout';
+import { assignFormation, generateFormationOffsets } from './SquadFormationLayout';
 import { WarriorAnimator } from './WarriorAnimator';
 import { type MonsterRuntimeRegistry } from '../monster/MonsterRuntimeRegistry';
 import { WarriorCombatController } from './WarriorCombatController';
@@ -181,26 +181,16 @@ export class SquadRenderer {
     ): SquadRuntimeHandle {
         const homeObject = this.getHomeObject(squad.homeObjectId);
         const homeVisual = getWorldVisualDefinition(homeObject.visualId);
-        const homeLeft = homeObject.gridX;
-        const homeRight = homeObject.gridX + homeVisual.w;
         const homeBottom = homeObject.gridY + homeVisual.h;
-        const formationBounds = getFormationBounds(generateFormationOffsets(squad.memberCount));
         const preferredSpawn = squad.spawnPoint ?? {
-            x: (homeLeft + homeRight) / 2,
+            x: homeObject.gridX + homeVisual.w / 2,
             y: homeBottom + 1,
         };
-        // A taller base must not cover the front rank of the legacy base-side spawn.
-        const spawnPoint = { ...preferredSpawn };
-        if (spawnPoint.x >= homeLeft && spawnPoint.x < homeRight) {
-            spawnPoint.y = Math.max(spawnPoint.y, homeBottom + 0.5 - formationBounds.minY);
+        const spawnPoint = this.resolveSpawnPoint(preferredSpawn, squad.memberCount);
+        if (!spawnPoint) {
+            throw new Error(`[SquadRenderer] failed to resolve spawn point for ${squad.id}`);
         }
-        const homeRestCell = this.navigator.findNearestWalkableCellInRow(
-            spawnPoint.x,
-            Math.floor(spawnPoint.y),
-        );
-        if (!homeRestCell) {
-            throw new Error(`[SquadRenderer] failed to resolve home rest cell for ${squad.id}`);
-        }
+        const homeRestPoint = { ...spawnPoint };
 
         const squadNode = new Node(`Squad_${squad.id}`);
         squadNode.setParent(this.squadRoot);
@@ -272,7 +262,7 @@ export class SquadRenderer {
             navigator: this.navigator,
             worldObjectRegistry: this.worldObjectRegistry,
             warriors,
-            homeRestCell,
+            homeRestPoint,
             terrainMap: this.terrainMap,
             hasLivingMembers: () => warriorHealth.some((health) => !health.isDepleted()),
             monsterRegistry: this.monsterRegistry,
@@ -388,6 +378,13 @@ export class SquadRenderer {
         return homeObject;
     }
 
+    public resolveSpawnPoint(
+        preferred: { x: number; y: number },
+        memberCount: number,
+    ): { x: number; y: number } | null {
+        return resolveSquadFormationPoint(this.navigationGrid, preferred, memberCount);
+    }
+
     private ensureFrameSets(): void {
         this.walkFrameSet ??= {
             [WarriorDirection.Down]: this.getWalkFramesForDirection(WarriorDirection.Down),
@@ -429,4 +426,33 @@ export class SquadRenderer {
         this.frameCache.set(key, frame);
         return frame;
     }
+}
+
+export function resolveSquadFormationPoint(
+    navigationGrid: NavigationGrid,
+    preferred: { x: number; y: number },
+    memberCount: number,
+): { x: number; y: number } | null {
+    const offsets = generateFormationOffsets(memberCount);
+    const fits = (point: { x: number; y: number }): boolean =>
+        navigationGrid.isPointWalkable(point)
+        && offsets.every((offset) => navigationGrid.isPointWalkable({
+            x: point.x + offset.x,
+            y: point.y + offset.y,
+        }));
+    if (fits(preferred)) return { ...preferred };
+
+    const candidates: Array<{ x: number; y: number; distance: number }> = [];
+    for (let ny = 0; ny < navigationGrid.height; ny += 1) {
+        for (let nx = 0; nx < navigationGrid.width; nx += 1) {
+            const point = navigationGrid.navCellToWorldPoint({ nx, ny });
+            if (!fits(point)) continue;
+            candidates.push({
+                ...point,
+                distance: Math.hypot(point.x - preferred.x, point.y - preferred.y),
+            });
+        }
+    }
+    candidates.sort((a, b) => a.distance - b.distance);
+    return candidates[0] ? { x: candidates[0].x, y: candidates[0].y } : null;
 }

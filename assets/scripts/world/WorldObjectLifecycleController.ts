@@ -1,6 +1,4 @@
 import { _decorator, Component } from 'cc';
-import { getWorldVisualDefinition } from './WorldAtlasConfig';
-import { NavigationGrid } from '../navigation/NavigationGrid';
 import { WorldObjectRenderer } from './WorldObjectRenderer';
 import { WorldObjectRuntimeRegistry } from './WorldObjectRuntimeRegistry';
 import { type WorldCellGrid } from './WorldCellGrid';
@@ -18,20 +16,17 @@ interface PendingRemoval {
 export class WorldObjectLifecycleController extends Component {
     private registry: WorldObjectRuntimeRegistry | null = null;
     private renderer: WorldObjectRenderer | null = null;
-    private navigationGrid: NavigationGrid | null = null;
     private worldCellGrid: WorldCellGrid | null = null;
     private readonly pending = new Map<string, PendingRemoval>();
 
     public setup(
         registry: WorldObjectRuntimeRegistry,
         renderer: WorldObjectRenderer,
-        navigationGrid: NavigationGrid,
-        worldCellGrid?: WorldCellGrid,
+        worldCellGrid: WorldCellGrid,
     ): void {
         this.registry = registry;
         this.renderer = renderer;
-        this.navigationGrid = navigationGrid;
-        this.worldCellGrid = worldCellGrid ?? null;
+        this.worldCellGrid = worldCellGrid;
     }
 
     public requestRemove(objectId: string): void {
@@ -66,20 +61,12 @@ export class WorldObjectLifecycleController extends Component {
 
     private commitRemoval(removal: PendingRemoval): void {
         const objectData = removal.objectData;
-        if (!objectData || !this.renderer || !this.navigationGrid) {
+        if (!objectData || !this.renderer || !this.worldCellGrid) {
             return;
         }
 
         this.renderer.removeObject(removal.objectId);
-        this.worldCellGrid?.releaseOwner(removal.objectId);
-        const visual = getWorldVisualDefinition(objectData.visualId);
-        let releasedCells = 0;
-        for (let y = objectData.gridY; y < objectData.gridY + visual.h; y += 1) {
-            for (let x = objectData.gridX; x < objectData.gridX + visual.w; x += 1) {
-                this.navigationGrid.setWalkable(x, y);
-                releasedCells += 1;
-            }
-        }
-        console.log(`[WorldObjectLifecycle] removed=${removal.objectId} releasedCells=${releasedCells}`);
+        this.worldCellGrid.releaseOwner(removal.objectId);
+        console.log(`[WorldObjectLifecycle] removed=${removal.objectId}`);
     }
 }

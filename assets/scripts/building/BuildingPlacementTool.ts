@@ -10,6 +10,7 @@
  * 不监听原始输入事件、不拥有 Build Mode 生命周期、不直接扣资源。
  */
 import { Vec2 } from 'cc';
+import { findSlotContainingCell } from '../map/CityLayout';
 import { type GridCell } from '../navigation/NavigationTypes';
 import { getBuildingDefinition } from './BuildingCatalog';
 import { BuildingGhostView } from './BuildingGhostView';
@@ -44,7 +45,14 @@ export class BuildingPlacementTool {
             this.ghost.hide();
             return;
         }
-        this.pointerCell = cell;
+        const slot = findSlotContainingCell(cell);
+        if (!slot) {
+            this.pointerCell = null;
+            this.currentSnapshot = null;
+            this.ghost.hide();
+            return;
+        }
+        this.pointerCell = { x: slot.x, y: slot.y };
         this.refreshCurrentCell();
     }
     public confirmCurrentPlacement(): boolean {

@@ -8,7 +8,12 @@ export interface GridPoint {
     y: number;
 }
 
+export interface NavCell {
+    nx: number;
+    ny: number;
+}
+
 export interface NavigationPathResult {
-    approachCell: GridCell;
-    path: GridCell[];
+    approachPoint: GridPoint;
+    path: GridPoint[];
 }

@@ -1,31 +1,31 @@
 import { NavigationGrid } from './NavigationGrid';
-import { type GridCell } from './NavigationTypes';
+import { type NavCell } from './NavigationTypes';
 
 const CARDINAL_COST = 10;
 const DIAGONAL_COST = 14;
 
 const NEIGHBOR_OFFSETS = [
-    { x: 0, y: -1, cost: CARDINAL_COST },
-    { x: 0, y: 1, cost: CARDINAL_COST },
-    { x: -1, y: 0, cost: CARDINAL_COST },
-    { x: 1, y: 0, cost: CARDINAL_COST },
-    { x: -1, y: -1, cost: DIAGONAL_COST },
-    { x: 1, y: -1, cost: DIAGONAL_COST },
-    { x: -1, y: 1, cost: DIAGONAL_COST },
-    { x: 1, y: 1, cost: DIAGONAL_COST },
+    { nx: 0, ny: -1, cost: CARDINAL_COST },
+    { nx: 0, ny: 1, cost: CARDINAL_COST },
+    { nx: -1, ny: 0, cost: CARDINAL_COST },
+    { nx: 1, ny: 0, cost: CARDINAL_COST },
+    { nx: -1, ny: -1, cost: DIAGONAL_COST },
+    { nx: 1, ny: -1, cost: DIAGONAL_COST },
+    { nx: -1, ny: 1, cost: DIAGONAL_COST },
+    { nx: 1, ny: 1, cost: DIAGONAL_COST },
 ] as const;
 
 export class AStarPathfinder {
     public findPath(
         grid: NavigationGrid,
-        start: GridCell,
-        goal: GridCell,
-    ): GridCell[] | null {
-        if (!grid.isWalkable(start.x, start.y) || !grid.isWalkable(goal.x, goal.y)) {
+        start: NavCell,
+        goal: NavCell,
+    ): NavCell[] | null {
+        if (!grid.isWalkable(start.nx, start.ny) || !grid.isWalkable(goal.nx, goal.ny)) {
             return null;
         }
 
-        if (start.x === goal.x && start.y === goal.y) {
+        if (start.nx === goal.nx && start.ny === goal.ny) {
             return [];
         }
 
@@ -36,8 +36,8 @@ export class AStarPathfinder {
         const openSet = new Set<number>();
         const closedSet = new Set<number>();
 
-        const startIndex = this.toIndex(grid, start.x, start.y);
-        const goalIndex = this.toIndex(grid, goal.x, goal.y);
+        const startIndex = this.toIndex(grid, start.nx, start.ny);
+        const goalIndex = this.toIndex(grid, goal.nx, goal.ny);
         gScore[startIndex] = 0;
         fScore[startIndex] = this.heuristic(start, goal);
         openSet.add(startIndex);
@@ -53,18 +53,18 @@ export class AStarPathfinder {
             const currentCell = this.fromIndex(grid, current);
 
             for (const neighborOffset of NEIGHBOR_OFFSETS) {
-                const neighborX = currentCell.x + neighborOffset.x;
-                const neighborY = currentCell.y + neighborOffset.y;
+                const neighborX = currentCell.nx + neighborOffset.nx;
+                const neighborY = currentCell.ny + neighborOffset.ny;
 
                 if (!grid.isWalkable(neighborX, neighborY)) {
                     continue;
                 }
 
                 if (
-                    neighborOffset.x !== 0 &&
-                    neighborOffset.y !== 0 &&
-                    (!grid.isWalkable(currentCell.x + neighborOffset.x, currentCell.y) ||
-                        !grid.isWalkable(currentCell.x, currentCell.y + neighborOffset.y))
+                    neighborOffset.nx !== 0 &&
+                    neighborOffset.ny !== 0 &&
+                    (!grid.isWalkable(currentCell.nx + neighborOffset.nx, currentCell.ny) ||
+                        !grid.isWalkable(currentCell.nx, currentCell.ny + neighborOffset.ny))
                 ) {
                     continue;
                 }
@@ -82,7 +82,7 @@ export class AStarPathfinder {
                 cameFrom[neighborIndex] = current;
                 gScore[neighborIndex] = tentativeG;
                 fScore[neighborIndex] = tentativeG + this.heuristic(
-                    { x: neighborX, y: neighborY },
+                    { nx: neighborX, ny: neighborY },
                     goal,
                 );
                 openSet.add(neighborIndex);
@@ -92,7 +92,7 @@ export class AStarPathfinder {
         return null;
     }
 
-    public getPathCost(path: readonly GridCell[]): number {
+    public getPathCost(path: readonly NavCell[]): number {
         if (path.length === 0) {
             return 0;
         }
@@ -101,7 +101,7 @@ export class AStarPathfinder {
         let previous = path[0];
         for (let i = 1; i < path.length; i += 1) {
             const current = path[i];
-            cost += previous.x !== current.x && previous.y !== current.y
+            cost += previous.nx !== current.nx && previous.ny !== current.ny
                 ? DIAGONAL_COST
                 : CARDINAL_COST;
             previous = current;
@@ -110,9 +110,9 @@ export class AStarPathfinder {
         return cost;
     }
 
-    private heuristic(a: GridCell, b: GridCell): number {
-        const dx = Math.abs(a.x - b.x);
-        const dy = Math.abs(a.y - b.y);
+    private heuristic(a: NavCell, b: NavCell): number {
+        const dx = Math.abs(a.nx - b.nx);
+        const dy = Math.abs(a.ny - b.ny);
         return CARDINAL_COST * (dx + dy) + (DIAGONAL_COST - 2 * CARDINAL_COST) * Math.min(dx, dy);
     }
 
@@ -121,8 +121,8 @@ export class AStarPathfinder {
         cameFrom: number[],
         current: number,
         startIndex: number,
-    ): GridCell[] {
-        const path: GridCell[] = [this.fromIndex(grid, current)];
+    ): NavCell[] {
+        const path: NavCell[] = [this.fromIndex(grid, current)];
         while (current !== startIndex) {
             current = cameFrom[current];
             if (current === -1) {
@@ -155,10 +155,10 @@ export class AStarPathfinder {
         return y * grid.width + x;
     }
 
-    private fromIndex(grid: NavigationGrid, index: number): GridCell {
+    private fromIndex(grid: NavigationGrid, index: number): NavCell {
         return {
-            x: index % grid.width,
-            y: Math.floor(index / grid.width),
+            nx: index % grid.width,
+            ny: Math.floor(index / grid.width),
         };
     }
 }

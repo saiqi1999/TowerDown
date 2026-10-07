@@ -16,6 +16,7 @@ import { GridPointerProjector } from './GridPointerProjector';
 import { BuildingGhostView } from './BuildingGhostView';
 import { getBuildingDefinition } from './BuildingCatalog';
 import { BUILDING_RELOCATION_DRAG_PIXELS } from './BuildingRelocationConfig';
+import { findSlotContainingCell } from '../map/CityLayout';
 const { ccclass } = _decorator;
 
 interface RelocationSetup {
@@ -36,7 +37,6 @@ export class BuildingRelocationController extends Component {
     private spacePressed = false;
     private pointer = new Vec2();
     private startPoint = new Vec2();
-    private grabOffset = new Vec2();
     private windowId = 0;
     private destination: { x: number; y: number } | null = null;
     private readonly onBlur = () => { this.spacePressed = false; this.cancel(); };
@@ -103,14 +103,12 @@ export class BuildingRelocationController extends Component {
         this.cancel();
         this.sample(event);
         if (this.overUi()) return;
-        const cell = this.config.projector.projectScreenPoint(this.pointer);
-        if (!cell) return;
+        if (!this.config.projector.projectScreenPoint(this.pointer)) return;
         const entry = [...this.config.registry.getAll()].reverse().find(e => e.node.isValid
             && e.node.activeInHierarchy && e.node.getComponent(UITransform)?.hitTest(this.pointer, this.windowId));
         if (!entry) return;
         this.id = entry.data.id;
         this.startPoint.set(this.pointer);
-        this.grabOffset.set(cell.x - entry.data.gridX, cell.y - entry.data.gridY);
     }
     private onMove(event: EventMouse): void {
         if (!this.id || !this.config) return;
@@ -141,7 +139,9 @@ export class BuildingRelocationController extends Component {
         this.destination = null;
         const cell = this.overUi() ? null : this.config.projector.projectScreenPoint(this.pointer);
         if (!cell) { this.config.ghost.hide(); return; }
-        const x = cell.x - this.grabOffset.x, y = cell.y - this.grabOffset.y;
+        const slot = findSlotContainingCell(cell);
+        if (!slot) { this.config.ghost.hide(); return; }
+        const x = slot.x, y = slot.y;
         const snapshot = this.config.service.preview(this.id, x, y);
         if (!snapshot) { this.cancel(); return; }
         this.config.ghost.updatePlacement(definition, snapshot);

@@ -1,43 +1,43 @@
 import { getWorldVisualDefinition } from '../world/WorldAtlasConfig';
 import { type WorldObjectData } from '../world/WorldObjectTypes';
 import { NavigationGrid } from './NavigationGrid';
-import { type GridCell } from './NavigationTypes';
+import { type NavCell } from './NavigationTypes';
 
 export class TargetApproachResolver {
     public getApproachCells(
         target: WorldObjectData,
         grid: NavigationGrid,
-    ): GridCell[] {
+    ): NavCell[] {
         const visual = getWorldVisualDefinition(target.visualId);
-        const candidates: GridCell[] = [];
+        const candidates: NavCell[] = [];
         const seen = new Set<string>();
 
-        const pushIfWalkable = (x: number, y: number): void => {
-            if (!grid.isWalkable(x, y)) {
+        const pushIfWalkable = (nx: number, ny: number): void => {
+            if (!grid.isWalkable(nx, ny)) {
                 return;
             }
 
-            const key = `${x},${y}`;
+            const key = `${nx},${ny}`;
             if (seen.has(key)) {
                 return;
             }
 
             seen.add(key);
-            candidates.push({ x, y });
+            candidates.push({ nx, ny });
         };
 
-        const topY = target.gridY - 1;
-        const bottomY = target.gridY + visual.h;
-        for (let x = target.gridX; x < target.gridX + visual.w; x += 1) {
-            pushIfWalkable(x, topY);
-            pushIfWalkable(x, bottomY);
+        const left = target.gridX * 2;
+        const right = (target.gridX + visual.w) * 2 - 1;
+        const top = target.gridY * 2;
+        const bottom = (target.gridY + visual.h) * 2 - 1;
+        for (let nx = left; nx <= right; nx += 1) {
+            pushIfWalkable(nx, top - 1);
+            pushIfWalkable(nx, bottom + 1);
         }
 
-        const leftX = target.gridX - 1;
-        const rightX = target.gridX + visual.w;
-        for (let y = target.gridY; y < target.gridY + visual.h; y += 1) {
-            pushIfWalkable(leftX, y);
-            pushIfWalkable(rightX, y);
+        for (let ny = top; ny <= bottom; ny += 1) {
+            pushIfWalkable(left - 1, ny);
+            pushIfWalkable(right + 1, ny);
         }
 
         return candidates;

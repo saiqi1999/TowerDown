@@ -9,8 +9,9 @@
  * 不监听输入、不显示 Ghost、不维护当前选中的蓝图。
  */
 import { NavigationGrid } from '../navigation/NavigationGrid';
+import { NavigationObstacleResolver } from '../navigation/NavigationObstacleResolver';
 import { ResourceInventory } from '../economy/ResourceInventory';
-import { WorldCellFlag, WorldCellGrid } from '../world/WorldCellGrid';
+import { WorldCellGrid } from '../world/WorldCellGrid';
 import { BuildingRuntimeRegistry } from './BuildingRuntimeRegistry';
 import { BuildingRenderer } from './BuildingRenderer';
 import { getBuildingDefinition } from './BuildingCatalog';
@@ -18,7 +19,11 @@ import {
     BuildingPlacementValidator,
     type BuildingCostResolver,
 } from './BuildingPlacementValidator';
-import { type BuildingPlacementResult, type BuildingInstanceData } from './BuildingTypes';
+import {
+    PlacementInvalidReason,
+    type BuildingPlacementResult,
+    type BuildingInstanceData,
+} from './BuildingTypes';
 
 export class BuildingPlacementService {
     private counter = 0;
@@ -26,9 +31,10 @@ export class BuildingPlacementService {
         private readonly validator: BuildingPlacementValidator,
         private readonly inventory: ResourceInventory,
         private readonly worldCellGrid: WorldCellGrid,
-        private readonly navigationGrid: NavigationGrid,
         private readonly renderer: BuildingRenderer,
         private readonly registry: BuildingRuntimeRegistry,
+        private readonly obstacleResolver: NavigationObstacleResolver,
+        private readonly prepareRoutes: (grid: NavigationGrid) => (() => void) | null,
         private readonly costResolver: BuildingCostResolver = (definition) => definition.cost,
         private readonly onPlacementCommitted: ((instance: BuildingInstanceData) => void) | null = null,
         private readonly onPlacementRolledBack: ((instance: BuildingInstanceData) => void) | null = null,
@@ -49,16 +55,33 @@ export class BuildingPlacementService {
             paidCost,
             boundSquadId: null,
         };
-        let spent = false; let claimed = false; let blocked = false; let node = null as ReturnType<BuildingRenderer['create']> | null; let registered = false;
+        const candidate = this.worldCellGrid.clone();
+        candidate.claimOccupant(this.obstacleResolver.forBuilding(instance, definition));
+        const applyRoutes = this.prepareRoutes(new NavigationGrid(candidate));
+        if (!applyRoutes) {
+            return {
+                success: false,
+                snapshot: {
+                    ...snapshot,
+                    canPlace: false,
+                    reason: PlacementInvalidReason.NavigationConflict,
+                },
+            };
+        }
+        let spent = false;
+        let committed = false;
+        let node = null as ReturnType<BuildingRenderer['create']> | null;
+        let registered = false;
         try {
             if (!this.inventory.trySpendCost(paidCost)) return { success: false, snapshot: this.validator.validate(definitionId, gridX, gridY) };
             spent = true;
-            this.worldCellGrid.claim(instance.id, WorldCellFlag.Building, snapshot.footprint); claimed = true;
-            if (definition.blocksNavigation) { for (const cell of snapshot.footprint) this.navigationGrid.setBlocked(cell.x, cell.y); blocked = true; }
             node = this.renderer.create(instance, definition);
-            registered = true;
+            this.worldCellGrid.replaceFrom(candidate);
+            committed = true;
             this.registry.add(instance, node);
+            registered = true;
             this.onPlacementCommitted?.(instance);
+            applyRoutes();
             console.log(`[BuildingPlacement] success id=${instance.id} cell=(${gridX},${gridY})`);
             return { success: true, instance, snapshot };
         } catch (error) {
@@ -69,8 +92,11 @@ export class BuildingPlacementService {
             }
             if (registered) this.registry.remove(instance.id);
             if (node?.isValid) node.destroy();
-            if (blocked) for (const cell of snapshot.footprint) this.navigationGrid.setWalkable(cell.x, cell.y);
-            if (claimed) this.worldCellGrid.releaseOwner(instance.id);
+            if (committed) {
+                const rollback = this.worldCellGrid.clone();
+                rollback.releaseOwner(instance.id);
+                this.worldCellGrid.replaceFrom(rollback);
+            }
             if (spent) this.inventory.addCost(paidCost);
             throw error;
         }

@@ -77,12 +77,11 @@ export class InteractionSlotResolver {
     }
 
     private isSlotAvailable(slot: InteractionSlot): boolean {
-        const cellX = Math.floor(slot.gridPoint.x);
-        const cellY = Math.floor(slot.gridPoint.y);
-
-        // Slot 是浮点接触点，但可达性仍由其落在哪个导航格来判定。
-        return this.navigationGrid.isInside(cellX, cellY)
-            && this.navigationGrid.isWalkable(cellX, cellY);
+        return slot.gridPoint.x >= 0
+            && slot.gridPoint.y >= 0
+            && slot.gridPoint.x < this.navigationGrid.mapWidth
+            && slot.gridPoint.y < this.navigationGrid.mapHeight
+            && this.navigationGrid.isPointWalkable(slot.gridPoint);
     }
 
     private resolveFacing(side: InteractionSide): WarriorDirection {

@@ -10,7 +10,8 @@
  */
 import { gridRectToWorldCenter } from '../grid/GridTransform';
 import { NavigationGrid } from '../navigation/NavigationGrid';
-import { WorldCellFlag, WorldCellGrid } from '../world/WorldCellGrid';
+import { NavigationObstacleResolver } from '../navigation/NavigationObstacleResolver';
+import { WorldCellGrid } from '../world/WorldCellGrid';
 import { BuildingRuntimeRegistry } from './BuildingRuntimeRegistry';
 import { BuildingPlacementValidator } from './BuildingPlacementValidator';
 import { getBuildingDefinition } from './BuildingCatalog';
@@ -22,6 +23,7 @@ export class BuildingRelocationService {
         private readonly validator: BuildingPlacementValidator,
         private readonly cells: WorldCellGrid,
         private readonly navigation: NavigationGrid,
+        private readonly obstacleResolver: NavigationObstacleResolver,
         // null means a unit is covered or an active route would become unreachable.
         private readonly prepareRoutes: (grid: NavigationGrid) => (() => void) | null,
     ) {}
@@ -32,26 +34,22 @@ export class BuildingRelocationService {
 
     public tryMove(id: string, x: number, y: number): boolean {
         const entry = this.registry.get(id);
-        const prepared = this.prepare(id, x, y);
-        if (!entry || !prepared?.snapshot.canPlace || !prepared.grid || !prepared.applyRoutes) return false;
+        if (!entry) return false;
         if (entry.data.gridX === x && entry.data.gridY === y) return true;
+        const prepared = this.prepare(id, x, y);
+        if (!prepared?.snapshot.canPlace || !prepared.candidate || !prepared.applyRoutes) return false;
         const definition = getBuildingDefinition(entry.data.definitionId)!;
-        const oldCells = this.cells.getOwnerCells(id).map(c => ({ ...c }));
         const oldPosition = entry.node.position.clone();
         try {
             // No observer callbacks until the complete authoritative state is installed.
             entry.node.setPosition(gridRectToWorldCenter(x, y, definition.footprintW, definition.footprintH,
-                this.navigation.width, this.navigation.height));
-            this.cells.releaseOwner(id);
-            this.cells.claim(id, WorldCellFlag.Building, prepared.snapshot.footprint);
+                this.navigation.mapWidth, this.navigation.mapHeight));
+            this.cells.replaceFrom(prepared.candidate);
         } catch (error) {
-            this.cells.releaseOwner(id);
-            this.cells.claim(id, WorldCellFlag.Building, oldCells);
             entry.node.setPosition(oldPosition);
             console.error('[BuildingRelocation] commit cancelled', error);
             return false;
         }
-        this.navigation.replaceFrom(prepared.grid);
         entry.data.gridX = x;
         entry.data.gridY = y;
         prepared.applyRoutes();
@@ -60,21 +58,25 @@ export class BuildingRelocationService {
     }
 
     private prepare(id: string, x: number, y: number): {
-        snapshot: BuildingPlacementSnapshot; grid?: NavigationGrid; applyRoutes?: () => void;
+        snapshot: BuildingPlacementSnapshot;
+        candidate?: WorldCellGrid;
+        applyRoutes?: () => void;
     } | null {
         const entry = this.registry.get(id);
         if (!entry?.node.isValid || !entry.node.activeInHierarchy) return null;
         const snapshot = this.validator.validateRelocation(entry.data, x, y);
         if (!snapshot.canPlace) return { snapshot };
         const definition = getBuildingDefinition(entry.data.definitionId)!;
-        const grid = new NavigationGrid(this.navigation.width, this.navigation.height);
-        grid.replaceFrom(this.navigation);
-        if (definition.blocksNavigation) {
-            for (const c of this.cells.getOwnerCells(id)) grid.setWalkable(c.x, c.y);
-            for (const c of snapshot.footprint) grid.setBlocked(c.x, c.y);
-        }
+        const candidate = this.cells.clone();
+        candidate.releaseOwner(id);
+        candidate.claimOccupant(this.obstacleResolver.forBuilding({
+            ...entry.data,
+            gridX: x,
+            gridY: y,
+        }, definition));
+        const grid = new NavigationGrid(candidate);
         const applyRoutes = this.prepareRoutes(grid);
         if (!applyRoutes) return { snapshot: { ...snapshot, canPlace: false, reason: PlacementInvalidReason.RelocationBlocked } };
-        return { snapshot, grid, applyRoutes };
+        return { snapshot, candidate, applyRoutes };
     }
 }

@@ -1,6 +1,6 @@
 import { _decorator, Component } from 'cc';
 import { gridPointToWorld } from '../grid/GridTransform';
-import { type GridCell, type GridPoint } from '../navigation/NavigationTypes';
+import { type GridPoint } from '../navigation/NavigationTypes';
 import { WarriorAnimator } from './WarriorAnimator';
 import { WarriorDirection } from './WarriorSpriteConfig';
 import { resolveWarriorDirection } from './WarriorDirectionUtils';
@@ -95,14 +95,6 @@ export class SquadMotor extends Component {
         this.playWalk(direction);
     }
 
-    public setPath(cells: GridCell[]): void {
-        const waypoints = cells.map((cell) => ({
-            x: cell.x + 0.5,
-            y: cell.y + 0.5,
-        }));
-        this.setWaypoints(waypoints);
-    }
-
     public stop(): void {
         this.waypoints = [];
         this.waypointIndex = 0;
@@ -110,9 +102,9 @@ export class SquadMotor extends Component {
         this.playIdle(this.lastDirection);
     }
 
-    public getDestinationCell(): GridCell | null {
+    public getDestinationPoint(): GridPoint | null {
         const last = this.waypoints[this.waypoints.length - 1];
-        return this.isMoving() && last ? { x: Math.floor(last.x), y: Math.floor(last.y) } : null;
+        return this.isMoving() && last ? { ...last } : null;
     }
 
     public isMoving(): boolean {

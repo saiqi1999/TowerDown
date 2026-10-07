@@ -1,4 +1,5 @@
 import { TerrainType, type TerrainMap } from './MapTypes';
+import { CITY_LAYOUT } from './CityLayout';
 
 const G = TerrainType.Grass;
 const D = TerrainType.Dirt;
@@ -30,6 +31,13 @@ const MAP_ROWS = [
     'GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG',
 ];
 
-export const STATIC_MAP: TerrainMap = MAP_ROWS.map((row) =>
-    Array.from(row, (cell) => (cell === 'D' ? D : G)),
-);
+export const STATIC_MAP: TerrainMap = (() => {
+    const map = MAP_ROWS.map((row) =>
+        Array.from(row, (cell) => (cell === 'D' ? D : G)));
+    for (let y = CITY_LAYOUT.y; y < CITY_LAYOUT.y + CITY_LAYOUT.height; y += 1) {
+        for (let x = CITY_LAYOUT.x; x < CITY_LAYOUT.x + CITY_LAYOUT.width; x += 1) {
+            map[y]![x] = D;
+        }
+    }
+    return map;
+})();

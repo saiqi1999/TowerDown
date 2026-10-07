@@ -11,7 +11,6 @@
  */
 import { BuildingRelocationController } from '../building/BuildingRelocationController';
 import { BuildingRelocationService } from '../building/BuildingRelocationService';
-import { generateFormationOffsets, getFormationBounds } from '../squad/SquadFormationLayout';
 import {
     _decorator,
     assetManager,
@@ -30,10 +29,11 @@ import { DamagePopupSpawner } from '../feedback/DamagePopupSpawner';
 import { WorldCommandController } from '../command/WorldCommandController';
 import { AStarPathfinder } from '../navigation/AStarPathfinder';
 import { NavigationGridBuilder } from '../navigation/NavigationGridBuilder';
+import { NavigationObstacleResolver } from '../navigation/NavigationObstacleResolver';
 import { TargetApproachResolver } from '../navigation/TargetApproachResolver';
 import { WorldNavigator } from '../navigation/WorldNavigator';
 import { STATIC_SQUADS } from '../squad/StaticSquads';
-import { SquadRenderer } from '../squad/SquadRenderer';
+import { resolveSquadFormationPoint, SquadRenderer } from '../squad/SquadRenderer';
 import {
     WARRIOR_TEXTURE_UUID,
 } from '../squad/WarriorSpriteConfig';
@@ -62,7 +62,7 @@ import { BuildingGhostView } from '../building/BuildingGhostView';
 import { BuildingPlacementTool } from '../building/BuildingPlacementTool';
 import { BuildToolController } from '../building/BuildToolController';
 import { GridPointerProjector } from '../building/GridPointerProjector';
-import { WorldCellFlag, WorldCellGrid } from '../world/WorldCellGrid';
+import { WorldCellGrid } from '../world/WorldCellGrid';
 import { getWorldVisualDefinition } from '../world/WorldAtlasConfig';
 import { BuildingUiAssetLoader } from '../building/BuildingUiAssetLoader';
 import { BuildCardStripController } from '../building/BuildCardStripController';
@@ -91,6 +91,12 @@ import { getStaticFloor, instantiateFloor } from './StaticFloorCatalog';
 import { SquadFloorRecovery } from '../squad/SquadFloorRecovery';
 import { WorldObjectView } from '../world/WorldObjectView';
 import { getBuildingDefinition } from '../building/BuildingCatalog';
+import {
+    assertBuildingsInCitySlots,
+    buildBoundaryOccupants,
+    validateCityLayout,
+} from './CityLayout';
+import { CityRenderer } from './CityRenderer';
 
 const { ccclass, property } = _decorator;
 
@@ -141,6 +147,7 @@ export class MainMapController extends Component {
     private combatEventHub: CombatEventHub | null = null;
     private monsterRegistry: MonsterRuntimeRegistry | null = null;
     private baseInteraction: BaseInteractionController | null = null;
+    private cityRenderer: CityRenderer | null = null;
 
     start(): void {
         void this.bootstrap();
@@ -274,6 +281,8 @@ export class MainMapController extends Component {
         const playerCombatModifiers = new CombatStatModifierRegistry();
         const primitiveRunState = new PrimitiveRunState(playerCombatModifiers);
         const buildingVisualLibrary = await BuildingVisualLibrary.load();
+        const cityFrames = await CityRenderer.loadFrames();
+        if (!this.node.isValid) return;
 
         this.structureRoot = structureRoot;
         this.resourceRoot = resourceRoot;
@@ -297,28 +306,20 @@ export class MainMapController extends Component {
             STATIC_MAP[0]?.length ?? 0,
             STATIC_MAP.length,
         );
+        validateCityLayout();
+        const obstacleResolver = new NavigationObstacleResolver();
         for (const objectData of worldObjectRegistry.getAll()) {
-            const visual = getWorldVisualDefinition(objectData.visualId);
-            const cells = [];
-            for (let y = objectData.gridY; y < objectData.gridY + visual.h; y += 1) {
-                for (let x = objectData.gridX; x < objectData.gridX + visual.w; x += 1) {
-                    cells.push({ x, y });
-                }
-            }
-            worldCellGrid.claim(
-                objectData.id,
-                objectData.kind === 0 ? WorldCellFlag.Base : WorldCellFlag.Resource,
-                cells,
-            );
+            worldCellGrid.claimOccupant(obstacleResolver.forWorldObject(objectData));
         }
+        for (const boundary of buildBoundaryOccupants(obstacleResolver)) {
+            worldCellGrid.claimOccupant(boundary);
+        }
+        worldCellGrid.assertConsistent();
 
         this.mapRenderer = new MapRenderer(tileRoot, atlasSpriteFrame);
         this.mapRenderer.render(STATIC_MAP);
 
-        const navigationGrid = new NavigationGridBuilder().build(
-            STATIC_MAP,
-            worldObjectRegistry.getAll(),
-        );
+        const navigationGrid = new NavigationGridBuilder().build(worldCellGrid);
         const lifecycle = mapRoot.getComponent(WorldObjectLifecycleController)
             ?? mapRoot.addComponent(WorldObjectLifecycleController);
         this.worldObjectRenderer = new WorldObjectRenderer(
@@ -336,7 +337,7 @@ export class MainMapController extends Component {
             interactionBrightnessMaterial,
             baseInteraction,
         );
-        lifecycle.setup(worldObjectRegistry, this.worldObjectRenderer, navigationGrid, worldCellGrid);
+        lifecycle.setup(worldObjectRegistry, this.worldObjectRenderer, worldCellGrid);
         this.worldObjectRenderer.render(
             worldObjectRegistry.getAll(),
             STATIC_MAP[0]?.length ?? 0,
@@ -420,6 +421,15 @@ export class MainMapController extends Component {
             ?? resourceHudNode.addComponent(ResourceHudView);
         resourceHud.setup(resourceInventory);
 
+        const cityRoot = this.getOrCreateChild(worldObjectRoot, 'CityRoot');
+        cityRoot.setSiblingIndex(0);
+        this.cityRenderer = new CityRenderer(
+            cityRoot,
+            cityFrames,
+            STATIC_MAP[0]?.length ?? 0,
+            STATIC_MAP.length,
+        );
+        this.cityRenderer.render();
         const buildingRoot = this.getOrCreateChild(worldObjectRoot, 'BuildingRoot');
         const previewRoot = this.getOrCreateChild(worldObjectRoot, 'BuildPreviewRoot');
         const buildToolNode = this.getOrCreateChild(mapRoot, 'BuildToolController');
@@ -449,14 +459,46 @@ export class MainMapController extends Component {
             placementCostResolver,
             placementGate,
         );
+        const validateCandidateNavigation = (candidate: import('../navigation/NavigationGrid').NavigationGrid) => {
+            const candidateNavigator = new WorldNavigator(
+                candidate,
+                new AStarPathfinder(),
+                new TargetApproachResolver(),
+            );
+            const routes: Array<() => void> = [];
+            for (const handle of squadHandles.values()) {
+                const center = handle.motor.getGridPosition();
+                if (!candidate.isPointWalkable(center)) return null;
+                for (let index = 0; index < handle.warriorMotors.length; index += 1) {
+                    const warriorPoint = handle.warriorMotors[index]!.getWorldGridPosition(center);
+                    if (!handle.warriorHealth[index]?.isDepleted()
+                        && !candidate.isPointWalkable(warriorPoint)) return null;
+                }
+                const destination = handle.motor.getDestinationPoint();
+                if (destination) {
+                    const path = candidateNavigator.findPathToPoint(center, destination);
+                    if (!path) return null;
+                    routes.push(() => handle.motor.setWaypoints(path));
+                }
+            }
+            for (const group of this.monsterRegistry?.getAll() ?? []) {
+                for (const monster of group.getAliveMonsters()) {
+                    if (!candidate.isPointWalkable(monster.getWorldGridPosition())) return null;
+                }
+            }
+            return () => {
+                for (const apply of routes) apply();
+            };
+        };
         let roster: SquadRosterController | null = null;
         const service = new BuildingPlacementService(
             validator,
             resourceInventory,
             worldCellGrid,
-            navigationGrid,
             buildingRenderer,
             buildingRegistry,
+            obstacleResolver,
+            validateCandidateNavigation,
             placementCostResolver,
             (instance) => {
                 const squad = primitiveRunState.registerBarracksPlacement(instance);
@@ -492,6 +534,7 @@ export class MainMapController extends Component {
                 roster?.refresh(primitiveRunState.getSquads(), squadHandles);
             },
         );
+        this.cityRenderer.bindRegistry(buildingRegistry);
         const ghost = new BuildingGhostView(
             previewRoot,
             buildingFactory,
@@ -526,42 +569,45 @@ export class MainMapController extends Component {
                         context.nextFloorInstanceId,
                     );
                     const nextObjects = [worldObjectRegistry.get('base_main')!, ...instance.resources];
-                    const candidateNavigation = new NavigationGridBuilder().build(STATIC_MAP, nextObjects);
-                    const candidateCells = new WorldCellGrid(
-                        STATIC_MAP[0]?.length ?? 0,
-                        STATIC_MAP.length,
-                    );
+                    const candidateCells = worldCellGrid.createEmptyCandidate();
                     for (const object of nextObjects) {
-                        const visual = getWorldVisualDefinition(object.visualId);
-                        candidateCells.claimRect(
-                            object.id,
-                            object.kind === 0 ? WorldCellFlag.Base : WorldCellFlag.Resource,
-                            object.gridX,
-                            object.gridY,
-                            visual.w,
-                            visual.h,
-                        );
+                        candidateCells.claimOccupant(obstacleResolver.forWorldObject(object));
                     }
+                    for (const boundary of buildBoundaryOccupants(obstacleResolver)) {
+                        candidateCells.claimOccupant(boundary);
+                    }
+                    assertBuildingsInCitySlots(buildingRegistry.getAll().map((entry) => entry.data));
                     for (const entry of buildingRegistry.getAll()) {
                         const definition = getBuildingDefinition(entry.data.definitionId);
                         if (!definition) throw new Error(`[FloorTransition] building definition missing: ${entry.data.definitionId}`);
-                        candidateCells.claimRect(
-                            entry.data.id,
-                            WorldCellFlag.Building,
-                            entry.data.gridX,
-                            entry.data.gridY,
-                            definition.footprintW,
-                            definition.footprintH,
+                        candidateCells.claimOccupant(
+                            obstacleResolver.forBuilding(entry.data, definition),
                         );
-                        if (definition.blocksNavigation) {
-                            for (let y = entry.data.gridY; y < entry.data.gridY + definition.footprintH; y += 1) {
-                                for (let x = entry.data.gridX; x < entry.data.gridX + definition.footprintW; x += 1) {
-                                    candidateNavigation.setBlocked(x, y);
-                                }
-                            }
-                        }
                     }
-                    navigationGrid.replaceFrom(candidateNavigation);
+                    candidateCells.assertConsistent();
+                    const candidateNavigation = new NavigationGridBuilder().build(candidateCells);
+                    const homePoints = new Map<string, import('../navigation/NavigationTypes').GridPoint>();
+                    const points = new Map<string, import('../navigation/NavigationTypes').GridPoint>();
+                    const base = worldObjectRegistry.get('base_main');
+                    const baseX = base?.gridX ?? 18;
+                    const baseY = base?.gridY ?? 10;
+                    const baseHeight = base ? getWorldVisualDefinition(base.visualId).h : 4;
+                    let recoveryIndex = 0;
+                    for (const [id, handle] of squadHandles) {
+                        const settledSquad = settlementPlan.nextSquads.find((squad) => squad.id === id);
+                        const memberCount = settledSquad?.memberCount ?? handle.warriorMotors.length;
+                        const point = resolveSquadFormationPoint(candidateNavigation, {
+                            x: baseX + 1 + recoveryIndex * 2,
+                            y: baseY + baseHeight + 1,
+                        }, memberCount);
+                        if (!point) {
+                            throw new Error(`[FloorTransition] no legal recovery point for ${id}.`);
+                        }
+                        recoveryIndex += 1;
+                        points.set(id, point);
+                        homePoints.set(id, { ...point });
+                    }
+                    lifecycle.clearPendingForFloorChange();
                     worldCellGrid.replaceFrom(candidateCells);
                     const settlementApplied = primitiveRunState.hasSettledFloor(context.currentFloorInstanceId)
                         || primitiveRunState.commitSettlement(settlementPlan, resourceInventory);
@@ -575,7 +621,6 @@ export class MainMapController extends Component {
                         }
                     }
                     roster?.refresh(primitiveRunState.getSquads(), squadHandles);
-                    lifecycle.clearPendingForFloorChange();
                     commandController.clearTargetsForFloorChange();
                     worldObjectRegistry.replaceResources(instance.resources);
                     this.worldObjectRenderer?.replaceResources(
@@ -599,24 +644,7 @@ export class MainMapController extends Component {
                         for (const member of group.members) ids.push(member.id);
                     }
                     enemyKillCounter.beginFloor(context.nextFloorInstanceId, ids);
-                    const homeCells = new Map<string, import('../navigation/NavigationTypes').GridCell>();
-                    const points = new Map<string, import('../navigation/NavigationTypes').GridPoint>();
-                    const base = worldObjectRegistry.get('base_main');
-                    const baseX = base?.gridX ?? 18;
-                    const baseY = base?.gridY ?? 10;
-                    let recoveryIndex = 0;
-                    const baseHeight = base ? getWorldVisualDefinition(base.visualId).h : 4;
-                    for (const [id, handle] of squadHandles) {
-                        const bounds = getFormationBounds(generateFormationOffsets(handle.warriorMotors.length));
-                        const point = {
-                            x: baseX + 1 + recoveryIndex * 2,
-                            y: baseY + baseHeight + 0.5 - bounds.minY,
-                        };
-                        recoveryIndex += 1;
-                        points.set(id, point);
-                        homeCells.set(id, { x: Math.floor(point.x), y: Math.floor(point.y) });
-                    }
-                    recovery.recover(squadHandles, homeCells, points);
+                    recovery.recover(squadHandles, homePoints, points);
                     return { success: true };
                 } finally {
                     this.combatEventHub?.setImpactBlockedPredicate(null);
@@ -687,34 +715,8 @@ export class MainMapController extends Component {
         );
         const relocationService = new BuildingRelocationService(
             buildingRegistry, validator, worldCellGrid, navigationGrid,
-            (candidate) => {
-                const newlyBlocked = (point: { x: number; y: number }) => {
-                    const x = Math.floor(point.x), y = Math.floor(point.y);
-                    return navigationGrid.isWalkable(x, y) && !candidate.isWalkable(x, y);
-                };
-                const candidateNavigator = new WorldNavigator(candidate, new AStarPathfinder(), new TargetApproachResolver());
-                const routes: Array<() => void> = [];
-                for (const handle of squadHandles.values()) {
-                    const center = handle.motor.getGridPosition();
-                    if (newlyBlocked(center)) return null;
-                    for (let i = 0; i < handle.warriorMotors.length; i += 1) {
-                        if (!handle.warriorHealth[i]?.isDepleted()
-                            && newlyBlocked(handle.warriorMotors[i]!.getWorldGridPosition(center))) return null;
-                    }
-                    const destination = handle.motor.getDestinationCell();
-                    if (destination) {
-                        const path = candidateNavigator.findPathToCell(center, destination);
-                        if (!path) return null;
-                        routes.push(() => handle.motor.setPath(path));
-                    }
-                }
-                for (const group of this.monsterRegistry?.getAll() ?? []) {
-                    for (const monster of group.getAliveMonsters()) {
-                        if (newlyBlocked(monster.getWorldGridPosition())) return null;
-                    }
-                }
-                return () => { for (const apply of routes) apply(); };
-            },
+            obstacleResolver,
+            validateCandidateNavigation,
         );
         relocation.setup({
             registry: buildingRegistry,
@@ -731,6 +733,8 @@ export class MainMapController extends Component {
     }
 
     protected onDestroy(): void {
+        this.cityRenderer?.dispose();
+        this.cityRenderer = null;
         this.baseInteraction?.destroy();
         this.baseInteraction = null;
     }

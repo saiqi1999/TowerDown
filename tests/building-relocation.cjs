@@ -1,28 +1,246 @@
-const ts=require(process.env.TYPESCRIPT_PATH || 'typescript'), fs=require('fs'), path=require('path'), assert=require('assert/strict'), Module=require('module');
-const root=path.resolve(__dirname, '../assets/scripts');
-require.extensions['.ts']=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,experimentalDecorators:true}}).outputText,f);
-class Vec2 {constructor(x=0,y=0){this.x=x;this.y=y} set(x,y){if(typeof x==='object'){this.x=x.x;this.y=x.y}else{this.x=x;this.y=y}return this}static distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}}
-class Vec3 extends Vec2 {constructor(x=0,y=0,z=0){super(x,y);this.z=z}clone(){return new Vec3(this.x,this.y,this.z)}}
-const cc={Vec2,Vec3,Component:class{},_decorator:{ccclass:()=>c=>c},EventMouse:{BUTTON_LEFT:0,BUTTON_RIGHT:2},KeyCode:{ESCAPE:27,SPACE:32},Node:{EventType:{}},UITransform:class{},Game:{EVENT_HIDE:'hide'},game:{on(){},off(){}},Input:{EventType:{}},input:{on(){},off(){}}};
-const orig=Module._load;Module._load=function(n,...a){return n==='cc'?cc:orig.call(this,n,...a)};
-const load=p=>require(path.join(root,p));
-const {WorldCellGrid,WorldCellFlag}=load('world/WorldCellGrid.ts'),{NavigationGrid}=load('navigation/NavigationGrid.ts'),{BuildingRuntimeRegistry}=load('building/BuildingRuntimeRegistry.ts'),{ResourceInventory}=load('economy/ResourceInventory.ts'),{BuildingPlacementValidator}=load('building/BuildingPlacementValidator.ts'),{BuildingRelocationService}=load('building/BuildingRelocationService.ts'),{TerrainType}=load('map/MapTypes.ts');
-const cells=new WorldCellGrid(12,12),grid=new NavigationGrid(12,12),reg=new BuildingRuntimeRegistry(),inv=new ResourceInventory();const terrain=Array.from({length:12},()=>Array(12).fill(TerrainType.Dirt));
-const instance={id:'a',definitionId:'barracks_01',gridX:2,gridY:2,enabled:false,createdSequence:7,paidCost:{0:40},boundSquadId:'squad_01'};
-let throwPosition=false;const node={isValid:true,activeInHierarchy:true,position:new Vec3(),setPosition(v){if(throwPosition){throwPosition=false;throw Error('injected position failure')}this.position=v.clone()},getComponent(){return null}};
-reg.add(instance,node);cells.claimRect('a',WorldCellFlag.Building,2,2,2,2);for(let y=2;y<4;y++)for(let x=2;x<4;x++)grid.setBlocked(x,y);cells.claimRect('base',WorldCellFlag.Base,7,7,4,4);for(let y=7;y<11;y++)for(let x=7;x<11;x++)grid.setBlocked(x,y);
-let routeBlocked=false,routeApplied=0,notified=0;reg.subscribe(()=>{notified++;assert.equal(cells.getOwnerCells('a')[0].x,instance.gridX);});const validator=new BuildingPlacementValidator(terrain,cells,inv,()=>({0:999}),()=>({allowed:false}));const svc=new BuildingRelocationService(reg,validator,cells,grid,()=>routeBlocked?null:()=>routeApplied++);
-assert(svc.preview('a',3,2).canPlace);assert.equal(instance.gridX,2);assert.equal(grid.isWalkable(2,2),false);assert(svc.tryMove('a',3,2));assert.equal(routeApplied,1);assert.equal(notified,1);assert(grid.isWalkable(2,2));assert(!grid.isWalkable(4,2));assert.equal(instance.boundSquadId,'squad_01');assert.equal(instance.enabled,false);assert.equal(reg.get('a').node,node);assert.deepEqual(inv.getSnapshot(),{wood:0,stone:0,food:0,gold:0});assert.equal(reg.getAll().length,1);
-assert.equal(svc.tryMove('a',7,7),false);assert.equal(svc.tryMove('a',-1,3),false);assert.equal(svc.tryMove('a',3.5,3),false);terrain[5][5]=TerrainType.Grass;assert.equal(svc.tryMove('a',5,5),false);routeBlocked=true;assert.equal(svc.tryMove('a',5,2),false);routeBlocked=false;
-throwPosition=true;const err=console.error;console.error=()=>{};assert.equal(svc.tryMove('a',5,2),false);console.error=err;assert.equal(instance.gridX,3);assert.equal(cells.getOwnerCells('a')[0].x,3);assert(!grid.isWalkable(3,2));assert(grid.isWalkable(5,2));assert.equal(notified,1);
-assert(svc.tryMove('a',3,2));assert.equal(notified,1);assert(!grid.isWalkable(7,7));
-const {BuildingRelocationController}=load('building/BuildingRelocationController.ts');const ctrl=new BuildingRelocationController();let moves=[],shown=[],hidden=0,hover=[],cancelClicks=0,blocked=false,overUi=false;const entry={data:{id:'b',definitionId:'barracks_01',gridX:1,gridY:1},node:{isValid:true,activeInHierarchy:true,getComponent(cls){if(cls===cc.UITransform)return {hitTest:()=>true};return {cancelPendingClick(){cancelClicks++}}}}};
-ctrl.setup({registry:{getAll:()=>[entry],get:()=>entry},service:{preview:(id,x,y)=>({gridX:x,gridY:y,canPlace:x>=0&&y>=0}),tryMove:(id,x,y)=>{moves.push([x,y]);return true}},projector:{projectScreenPoint:p=>p.x<0?null:{x:Math.floor(p.x/10),y:Math.floor(p.y/10)}},ghost:{hide(){hidden++},updatePlacement(d,s){shown.push(s)}},excludedUi:[{isValid:true,activeInHierarchy:true,getComponent:()=>({hitTest:()=>overUi})}],isBlocked:()=>blocked,onDraggingChanged:a=>hover.push(a)});
-const ev=(x,y,button=0)=>({windowId:0,getButton:()=>button,getLocation(out){out.set(x,y);return out}});
-ctrl.onDown(ev(15,15));ctrl.onUp(ev(17,17));assert.equal(moves.length,0);ctrl.onDown(ev(15,15));ctrl.onMove(ev(35,15));ctrl.onUp(ev(45,15));assert.deepEqual(moves,[[4,1]]);assert.deepEqual(hover,[true,false]);assert(cancelClicks>0);assert(!ctrl.isTracking());
-ctrl.onDown(ev(15,15));ctrl.onMove(ev(35,15));overUi=true;ctrl.onUp(ev(55,15));assert.equal(moves.length,1);overUi=false;
-ctrl.onDown(ev(15,15));ctrl.onMove(ev(35,15));ctrl.onKeyDown({keyCode:27});ctrl.onUp(ev(55,15));assert.equal(moves.length,1);
-ctrl.onDown(ev(15,15));ctrl.onMove(ev(35,15));blocked=true;ctrl.lateUpdate();assert(!ctrl.isTracking());blocked=false;
-ctrl.onDown(ev(15,15));ctrl.onMove(ev(35,15));ctrl.onDown(ev(35,15,2));assert(!ctrl.isTracking());
-ctrl.onKeyDown({keyCode:32});ctrl.onDown(ev(15,15));assert(!ctrl.isTracking());ctrl.onBlur();ctrl.onDown(ev(15,15));assert(ctrl.isTracking());ctrl.cancel();
-console.log('PASS: self-overlap, preview immutability, no cost/cap checks, identity/binding retention, terrain/occupancy/bounds/routes rejection, rollback, click threshold, release-coordinate freshness, UI drop, Escape, right-click, modal cancel and Space-pan priority.');
+const ts = (() => {
+    const candidates = [
+        process.env.TYPESCRIPT_PATH,
+        'typescript',
+        '/Applications/Cocos/Creator/3.8.8/CocosCreator.app/Contents/Resources/app.asar.unpacked/node_modules/typescript',
+    ].filter(Boolean);
+    for (const candidate of candidates) {
+        try { return require(candidate); } catch {}
+    }
+    throw new Error('TypeScript runtime not found. Set TYPESCRIPT_PATH before running this test.');
+})();
+const fs = require('fs');
+const path = require('path');
+const assert = require('assert/strict');
+const Module = require('module');
+const root = path.resolve(__dirname, '../assets/scripts');
+
+require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileModule(
+    fs.readFileSync(filename, 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, experimentalDecorators: true } },
+).outputText, filename);
+
+class Vec2 {
+    constructor(x = 0, y = 0) { this.x = x; this.y = y; }
+    set(x, y) {
+        if (typeof x === 'object') { this.x = x.x; this.y = x.y; } else { this.x = x; this.y = y; }
+        return this;
+    }
+    static distance(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+}
+class Vec3 extends Vec2 {
+    constructor(x = 0, y = 0, z = 0) { super(x, y); this.z = z; }
+    clone() { return new Vec3(this.x, this.y, this.z); }
+}
+const cc = {
+    Vec2,
+    Vec3,
+    Component: class {},
+    _decorator: { ccclass: () => (value) => value },
+    EventMouse: { BUTTON_LEFT: 0, BUTTON_RIGHT: 2 },
+    KeyCode: { ESCAPE: 27, SPACE: 32 },
+    Node: { EventType: {} },
+    UITransform: class {},
+    Game: { EVENT_HIDE: 'hide' },
+    game: { on() {}, off() {} },
+    Input: { EventType: {} },
+    input: { on() {}, off() {} },
+};
+const originalLoad = Module._load;
+Module._load = function load(name, ...args) {
+    return name === 'cc' ? cc : originalLoad.call(this, name, ...args);
+};
+const load = (modulePath) => require(path.join(root, modulePath));
+
+const { WorldCellGrid } = load('world/WorldCellGrid.ts');
+const { NavigationGrid } = load('navigation/NavigationGrid.ts');
+const { NavigationObstacleResolver } = load('navigation/NavigationObstacleResolver.ts');
+const { AStarPathfinder } = load('navigation/AStarPathfinder.ts');
+const { buildBoundaryOccupants, getCitySlots, validateCityLayout } = load('map/CityLayout.ts');
+const { BuildingRuntimeRegistry } = load('building/BuildingRuntimeRegistry.ts');
+const { ResourceInventory } = load('economy/ResourceInventory.ts');
+const { BuildingPlacementValidator } = load('building/BuildingPlacementValidator.ts');
+const { BuildingRelocationService } = load('building/BuildingRelocationService.ts');
+const { getBuildingDefinition } = load('building/BuildingCatalog.ts');
+const { TerrainType } = load('map/MapTypes.ts');
+
+validateCityLayout();
+assert.equal(getCitySlots().length, 12);
+const resolver = new NavigationObstacleResolver();
+const cells = new WorldCellGrid(40, 23);
+for (const record of buildBoundaryOccupants(resolver)) cells.claimOccupant(record);
+const grid = new NavigationGrid(cells);
+assert.equal(cells.getAllOwnerRecords().length, 32);
+assert.equal(grid.width, 80);
+assert.equal(grid.height, 46);
+assert.equal(grid.isPointWalkable({ x: 19.25, y: 7.25 }), true);
+assert.equal(grid.isPointWalkable({ x: 18.25, y: 7.25 }), false);
+assert.equal(grid.isPointWalkable({ x: 16.25, y: 8.25 }), true);
+
+const definition = getBuildingDefinition('barracks_01');
+const instance = {
+    id: 'a',
+    definitionId: definition.id,
+    gridX: 16,
+    gridY: 8,
+    enabled: false,
+    createdSequence: 7,
+    paidCost: { 0: 40 },
+    boundSquadId: 'squad_01',
+};
+cells.claimOccupant(resolver.forBuilding(instance, definition));
+assert.equal(grid.isPointWalkable({ x: 16.25, y: 8.25 }), true);
+assert.equal(grid.isPointWalkable({ x: 16.75, y: 8.75 }), false);
+assert.equal(grid.isPointWalkable({ x: 17.75, y: 9.75 }), true);
+cells.assertConsistent();
+
+const pathfinder = new AStarPathfinder();
+const pathThroughNorthGate = pathfinder.findPath(
+    grid,
+    grid.worldToNavCell({ x: 19.25, y: 6.25 }),
+    grid.worldToNavCell({ x: 19.25, y: 8.25 }),
+);
+assert(pathThroughNorthGate);
+
+const candidate = cells.clone();
+candidate.releaseOwner('a');
+candidate.claimOccupant(resolver.forBuilding({ ...instance, gridX: 18, gridY: 8 }, definition));
+assert.equal(grid.isPointWalkable({ x: 16.75, y: 8.75 }), false);
+cells.replaceFrom(candidate);
+assert.equal(grid.isPointWalkable({ x: 16.75, y: 8.75 }), true);
+assert.equal(grid.isPointWalkable({ x: 18.75, y: 8.75 }), false);
+assert.equal(grid.canTraverseSegment({ x: 18.25, y: 8.25 }, { x: 19.25, y: 9.25 }), false);
+assert.equal(grid.canTraverseSegment({ x: 16.25, y: 8.25 }, { x: 17.25, y: 8.25 }), true);
+
+const registry = new BuildingRuntimeRegistry();
+const inventory = new ResourceInventory();
+const terrain = Array.from({ length: 23 }, () => Array(40).fill(TerrainType.Dirt));
+let throwPosition = false;
+const node = {
+    isValid: true,
+    activeInHierarchy: true,
+    position: new Vec3(),
+    setPosition(value) {
+        if (throwPosition) { throwPosition = false; throw Error('injected position failure'); }
+        this.position = value.clone();
+    },
+    getComponent() { return null; },
+};
+instance.gridX = 18;
+registry.add(instance, node);
+let routeBlocked = false;
+let routeApplied = 0;
+let notified = 0;
+registry.subscribe(() => {
+    notified += 1;
+    assert.equal(cells.getOwnerCells('a')[0].x, instance.gridX);
+});
+const validator = new BuildingPlacementValidator(
+    terrain,
+    cells,
+    inventory,
+    () => ({ 0: 999 }),
+    () => ({ allowed: false }),
+);
+const relocation = new BuildingRelocationService(
+    registry,
+    validator,
+    cells,
+    grid,
+    resolver,
+    () => routeBlocked ? null : () => routeApplied += 1,
+);
+assert(relocation.preview('a', 20, 8).canPlace);
+assert.equal(instance.gridX, 18);
+assert(relocation.tryMove('a', 20, 8));
+assert.equal(routeApplied, 1);
+assert.equal(notified, 1);
+assert.equal(cells.getOwnerCells('a')[0].x, 20);
+assert.equal(relocation.tryMove('a', 18, 10), false);
+assert.equal(relocation.tryMove('a', 17, 8), false);
+routeBlocked = true;
+assert.equal(relocation.tryMove('a', 22, 8), false);
+routeBlocked = false;
+throwPosition = true;
+const originalError = console.error;
+console.error = () => {};
+assert.equal(relocation.tryMove('a', 22, 8), false);
+console.error = originalError;
+assert.equal(instance.gridX, 20);
+assert.equal(cells.getOwnerCells('a')[0].x, 20);
+
+const { BuildingRelocationController } = load('building/BuildingRelocationController.ts');
+const controller = new BuildingRelocationController();
+const moves = [];
+const hover = [];
+let hidden = 0;
+let cancelClicks = 0;
+let blocked = false;
+let overUi = false;
+const entry = {
+    data: { id: 'b', definitionId: 'barracks_01', gridX: 16, gridY: 8 },
+    node: {
+        isValid: true,
+        activeInHierarchy: true,
+        getComponent(Type) {
+            if (Type === cc.UITransform) return { hitTest: () => true };
+            return { cancelPendingClick() { cancelClicks += 1; } };
+        },
+    },
+};
+controller.setup({
+    registry: { getAll: () => [entry], get: () => entry },
+    service: {
+        preview: (id, x, y) => ({ gridX: x, gridY: y, canPlace: x >= 0 && y >= 0 }),
+        tryMove: (id, x, y) => { moves.push([x, y]); return true; },
+    },
+    projector: { projectScreenPoint: (point) => point.x < 0 ? null : ({ x: Math.floor(point.x / 10), y: Math.floor(point.y / 10) }) },
+    ghost: { hide() { hidden += 1; }, updatePlacement() {} },
+    excludedUi: [{ isValid: true, activeInHierarchy: true, getComponent: () => ({ hitTest: () => overUi }) }],
+    isBlocked: () => blocked,
+    onDraggingChanged: (active) => hover.push(active),
+});
+const event = (x, y, button = 0) => ({
+    windowId: 0,
+    getButton: () => button,
+    getLocation(out) { out.set(x, y); return out; },
+});
+controller.onDown(event(165, 85));
+controller.onUp(event(167, 87));
+assert.equal(moves.length, 0);
+controller.onDown(event(165, 85));
+controller.onMove(event(205, 85));
+controller.onUp(event(205, 85));
+assert.deepEqual(moves, [[20, 8]]);
+assert.deepEqual(hover, [true, false]);
+assert(cancelClicks > 0);
+controller.onDown(event(165, 85));
+controller.onMove(event(205, 85));
+overUi = true;
+controller.onUp(event(225, 85));
+assert.equal(moves.length, 1);
+overUi = false;
+controller.onDown(event(165, 85));
+controller.onMove(event(205, 85));
+controller.onKeyDown({ keyCode: 27 });
+controller.onUp(event(225, 85));
+assert.equal(moves.length, 1);
+controller.onDown(event(165, 85));
+controller.onMove(event(205, 85));
+blocked = true;
+controller.lateUpdate();
+assert(!controller.isTracking());
+blocked = false;
+controller.onDown(event(165, 85));
+controller.onMove(event(205, 85));
+controller.onDown(event(205, 85, 2));
+assert(!controller.isTracking());
+controller.onKeyDown({ keyCode: 32 });
+controller.onDown(event(165, 85));
+assert(!controller.isTracking());
+controller.onBlur();
+controller.onDown(event(165, 85));
+assert(controller.isTracking());
+controller.cancel();
+
+console.log('PASS: single occupancy source, 16px navigation, wall/gate masks, central building core, A*, relocation transaction, and drag slot snapping.');

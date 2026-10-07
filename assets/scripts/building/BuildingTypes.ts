@@ -32,7 +32,8 @@ export interface BuildingDefinition {
     id: string; displayName: string; category: BuildingCategory;
     visualId: BuildingVisualId; visual: BuildingVisualDefinition; visualWidthPixels: number; visualHeightPixels: number; visualScale: number; footprintW: number; footprintH: number;
     cost: ResourceCost; allowedTerrain: readonly TerrainType[];
-    blocksNavigation: boolean; eraRequired: number; effectIds: readonly string[]; shortEffectText?: string;
+    blocksNavigation: boolean; navigationShape?: 'full' | 'centralCore';
+    eraRequired: number; effectIds: readonly string[]; shortEffectText?: string;
     settlementRole?: BuildingSettlementRole;
     settlementText?: string;
 }
@@ -49,6 +50,7 @@ export interface BuildingInstanceData {
 export enum PlacementInvalidReason {
     None = 0, PointerOutsideMap = 1, OutOfBounds = 2, TerrainNotAllowed = 3,
     Occupied = 4, InsufficientResources = 5, DefinitionMissing = 6, SquadCapacity = 7, RelocationBlocked = 8,
+    OutsideCitySlot = 9, UnsupportedCityFootprint = 10, NavigationConflict = 11,
 }
 export interface BuildingPlacementSnapshot {
     definitionId: string; gridX: number; gridY: number; footprint: readonly GridCell[];

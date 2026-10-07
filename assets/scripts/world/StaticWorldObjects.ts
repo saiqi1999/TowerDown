@@ -4,14 +4,15 @@ import {
     WorldVisualId,
     type WorldObjectData,
 } from './WorldObjectTypes';
+import { CITY_LAYOUT } from '../map/CityLayout';
 
 export const STATIC_WORLD_OBJECTS: WorldObjectData[] = [
     {
         id: 'base_main',
         kind: WorldObjectKind.Base,
         visualId: WorldVisualId.BaseOrange,
-        gridX: 18,
-        gridY: 10,
+        gridX: CITY_LAYOUT.base.x,
+        gridY: CITY_LAYOUT.base.y,
     },
     {
         id: 'wood_01',
