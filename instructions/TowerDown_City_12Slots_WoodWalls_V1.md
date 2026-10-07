@@ -1,23 +1,91 @@
-# TowerDown：十二固定建筑位与木城墙技术方案 V1
+# TowerDown：十二固定建筑位与木城墙技术方案 V1（修订2）
 
-> 状态：待实施的技术方案；本次提交只写文档，不修改游戏代码、GDD或数值。
-> 代码基线：main 2f4ad84（2026-10-07）。图片提交为2f4ad84、225c9a2、db06f65；严格最近三次提交中4eb0991是GDD更新，并非图片提交。
-> 本轮覆盖：中央基地保持4×4，外围12个2×2固定建筑位、1格厚木城墙和四个常开通道。继续从下方蓝图进入建造模式。
-> 不做防御塔位、点击加号建设菜单、城墙生命/攻击/维修、宝箱运输、经济结算重构或新兵种。空地图片上的加号只是视觉，不注册点击事件。
+> 待实施方案；本次仅修改此文档。代码基线2f4ad84；图片来自2f4ad84、225c9a2、db06f65。
+> 修订：建筑中央不可走、相邻建筑之间有路、空地可走；建筑、基地、资源、城墙、城门接入唯一占用记录。取消上一版“普通建筑blocksNavigation=false”和额外手写墙导航表的做法。
+> 保留从下方蓝图进入建造；不加入塔位、点击加号建设菜单、城墙生命或经济结算改造。
 
-## 1. 已核对的代码与图片
+## 0. 所有修改文件与方法逻辑关系
 
-### 1.1 现状与需要修复的连接点
+图中省略共同前缀assets/scripts/，每个文件的完整职责和方法改动见第3章。分为两个图以便阅读；两图中的WorldCellGrid、NavigationGrid是同一个实例链路，不是两套系统。
 
-- StaticWorldObjects.ts：base_main锚点(18,10)；WorldAtlasConfig.ts定义基地4×4。
-- StaticMap.ts：40×23，现有泥地是较大的不规则区域，不是10×10城市边界。
-- BuildingCatalog.ts：当前四种建筑均2×2、blocksNavigation:true。
-- BuildingPlacementValidator.validate()：只检查泥地、占用、费用、队伍限制；任意泥地均能造。validateRelocation()另行检查allowedTerrain，还未统一固定槽位。
-- BuildingPlacementTool.refreshPointer()将指针格直接作为建筑左上角；拖移refresh()使用鼠标格减grabOffset，也不认识槽位。
-- MainMapController.bootstrap()和换层commit回调分别构造WorldCellGrid、NavigationGrid；只修首层会在换层丢掉墙体约束。
-- PrimitiveRunState.registerBarracksPlacement()的出生参考点为(19,14)/(21,14)，不是动态查找营地下方；本轮不顺便重做兵营出生规则。
-- SquadRenderer.createSquad()做基地下方偏移；换层恢复又自行算点，需检查新增城墙后是否落墙。
-- MapRenderer已经绘制世界外缘悬崖。城市围墙是内层实体，不替换悬崖，也不改TerrainAtlas坐标。
+### 0.1 城市表现、布局与唯一占用数据流
+
+```mermaid
+flowchart TD
+    Main["map/MainMapController.ts / bootstrap / 换层commit / onDestroy"]
+    Layout["map/CityLayout.ts〔新增〕 / getCitySlots / findSlotContainingCell / buildBoundaryOccupants / validateCityLayout"]
+    Static["map/StaticMap.ts + world/StaticWorldObjects.ts / 地形覆盖 / 基地坐标引用"]
+    Art["map/CityVisualConfig.ts〔新增〕 / 8图UUID / 朝向映射"]
+    Render["map/CityRenderer.ts〔新增〕 / loadFrames / render / refreshSlots / dispose"]
+    Types["building/BuildingTypes.ts + BuildingCatalog.ts / navigationShape / 非法原因 / centralCore配置"]
+    Mask["navigation/NavigationObstacleResolver.ts〔新增〕 / forBuilding / forWorldObject / forBoundary"]
+    Owners["world/WorldCellGrid.ts〔唯一权威〕 / claimOccupant / releaseOwner / clone / replaceFrom / isNavBlocked"]
+    Builder["navigation/NavigationGridBuilder.ts / build：创建只读视图"]
+    Nav["navigation/NavigationGrid.ts / isWalkable / isPointWalkable / canTraverseSegment"]
+    Main --> Layout
+    Layout --> Static
+    Layout --> Render
+    Art --> Render
+    Main --> Render
+    Types --> Mask
+    Layout --> Mask
+    Mask --> Owners
+    Main --> Owners
+    Main --> Builder
+    Owners --> Builder --> Nav
+```
+
+### 0.2 建造、搬迁、资源移除与路径消费
+
+```mermaid
+flowchart TD
+    Tool["building/BuildingPlacementTool.ts / refreshPointer：吸附槽位"]
+    Drag["building/BuildingRelocationController.ts / refresh：目标槽位"]
+    Valid["building/BuildingPlacementValidator.ts / validateSpatial / validate / validateRelocation"]
+    Place["building/BuildingPlacementService.ts / tryPlace：候选占用、校验、提交"]
+    Move["building/BuildingRelocationService.ts / prepare / preview / tryMove"]
+    Remove["world/WorldObjectLifecycleController.ts / setup / commitRemoval：按owner释放"]
+    Owners["world/WorldCellGrid.ts / 唯一占用记录与revision"]
+    Nav["navigation/NavigationGrid.ts / 只读占用查询"]
+    Astar["navigation/AStarPathfinder.ts / findPath：NavCell整数索引"]
+    Approach["navigation/TargetApproachResolver.ts / getApproachCells：细格外围候选"]
+    Navigator["navigation/WorldNavigator.ts / 对象/目标点/idle/集合点寻路"]
+    Contracts["navigation/NavigationTypes.ts / NavCell / GridPoint / path语义"]
+    Brain["squad/SquadBrain.ts + SquadFloorRecovery.ts / homeRestPoint / setWaypoints / recover"]
+    Motor["squad/SquadMotor.ts / setWaypoints / getDestinationPoint"]
+    Spawn["squad/SquadRenderer.ts / createSquad：合法出生集合点"]
+    Slots["squad/InteractionSlotResolver.ts / 连续位置合法性检查"]
+    Main["map/MainMapController.ts / 装配、候选路径校验、换层恢复"]
+    Tool --> Valid
+    Drag --> Valid
+    Valid --> Place
+    Valid --> Move
+    Place --> Owners
+    Move --> Owners
+    Remove --> Owners
+    Owners --> Nav
+    Nav --> Astar
+    Nav --> Approach
+    Astar --> Navigator
+    Approach --> Navigator
+    Contracts --> Navigator
+    Navigator --> Brain --> Motor
+    Navigator --> Spawn
+    Nav --> Slots
+    Main --> Place
+    Main --> Move
+    Main --> Spawn
+```
+
+资源导入变更也属于文件清单：8个图片对应的.png.meta仅将minfilter/magfilter改nearest，不换UUID、不改PNG；名单见1.2。4个新增.ts附带Creator生成的.meta。本轮不修改BuildingRuntimeRegistry.ts，仅复用subscribe/notifyRelocated；不修改下方蓝图UI和世界悬崖逻辑。
+
+## 1. 现状核验与修订原因
+
+- 当前WorldCellGrid拥有flags与owner→格子的Map；NavigationGrid另有可写Uint8Array。建造、搬迁、资源移除和换层在不同地方直接setBlocked/setWalkable，存在双写风险。
+- 原NavigationGrid一格等于32px，不能表达2×2建筑中央阻挡、四边各保留半格的通路。
+- AStarPathfinder接收整数格；WorldNavigator返回GridCell[]；SquadMotor.setPath对每个点加0.5。细化导航必须修改坐标转换边界，不能只把地图宽高乘2。
+- 基地锚点(18,10)，4×4；地图40×23；四种普通建筑均2×2。摆放与搬迁当前仍按任意泥地锚点处理。
+- 城市与新图片信息继续沿用核验结果；不凭文件名把门边件当成完整城门。
 
 ### 1.2 实图核验与导入ID
 
@@ -62,52 +130,60 @@
 
 坐标参考只用于计算入口，不代表这次实现宝箱交付。
 
-### 2.1 没有道路空间的处理（明确的原型取舍）
 
-12×4+16=64格，内部已经铺满，不能同时承诺“建筑全占格阻挡”“不留道路”“满城仍能通行”。
+### 2.1 建造格和导航格分别定义，但共享一份占用事实
 
-本方案选择：普通2×2建筑保留WorldCellGrid建造占用，但blocksNavigation改false，表示可穿行的生产地块；主基地仍阻挡，实墙阻挡，门常开。不新增道路槽、不挤掉建筑位、不扩大城墙。
-代价：部队可能经过建筑图像；当前美术不是逐像素碰撞，先以经营地块可通行为准。若要求房屋本体不可穿，应另开子格导航/局部障碍方案，不能在此次将全部地块重新设为障碍。
+- 建造格：32×32px，继续使用原GridCell整数坐标，建筑2×2与基地4×4不变。
+- 导航细格：16×16px，NAV_SUBDIVISIONS=2；地图80×46个NavCell。
+- 地图连续位置GridPoint：仍以32px逻辑格为单位。美术、战斗距离、移速和队伍阵型不乘2。
+- 普通2×2建筑对应4×4细格，中央2×2细格阻挡，即中央32×32px；四周各16px可走。
+- 两个相邻建筑各留16px，共形成32px通道；没有建筑的空槽全部可走。
+- 基地先维持完整4×4阻挡；紧邻基地的普通建筑半格边缘仍提供16px通路。
+- 实墙占1×1建造格，该格四个细格全部阻挡；门占建造保留格，但本版常开、导航阻挡集合为空。
+- 所有36个边框格都禁止建造；不把“门可走”误写为“门没有占用记录”。
+- 空槽不登记阻挡owner、不claim Reserved；槽位是合法性范围，不是障碍。
 
-墙和门都占建造保留格，因此门“可行走”不等于“可建造”。空槽不能claim为Reserved，否则合法建造永远失败。
-
-## 3. 修改文件与职责
-
-新增3个生产脚本及Creator生成的.meta：
-1. assets/scripts/map/CityLayout.ts：纯布局、槽位查询、边框分类、共享占格/导航应用函数。
-2. assets/scripts/map/CityVisualConfig.ts：图片UUID及墙体视觉映射，不存经济规则。
-3. assets/scripts/map/CityRenderer.ts：加载静态图、渲染槽位和墙、订阅槽位占用变化。
-
-其余改既有脚本。新增.ts遵守根AGENTS.md，头部必须写Why this file exists / Ownership boundary / This file deliberately does NOT。不把城市布局塞进TerrainAtlas或PrimitiveRunState。
-
-### 3.1 CityLayout.ts：新增方法与原因
-
-建议类型CitySlot{id,gridX,gridY,w:2,h:2}、CityBoundaryCell{x,y,kind:'wall'|'gate',visualKey,flipX}。所有数据由一个CITY_LAYOUT常量派生，不能在渲染、放置、换层各写一套坐标。
-
-- getCitySlots()：生成上述12槽；ID按行排序，稳定不随建筑变化。
-- findSlotContainingCell(x,y)：鼠标处于槽位任意一格均返回该槽；城外/基地/墙/门返回null。
-- findSlotByAnchor(x,y)：只接受精确槽位左上角，服务最终验证，不做隐式修正。
-- getCityBoundaryCells()：返回36个不重复边框格及各自墙/门分类。
-- applyCityOccupancy(cells)：以ownerId='city:boundary'、WorldCellFlag.Reserved一次claim全部36格；只在新建grid调用，不能对活grid重复claim。
-- applyCityNavigation(grid)：仅对28墙格setBlocked，不对门调用setWalkable（避免覆盖其他实体障碍）；门的默认可走来自空白网格。
-- validateCityLayout(mapWidth,mapHeight)：检查数量、界内、无槽位重叠、无基地/边框交叠。失败明确报错，不静默丢槽。
-- assertBuildingsInCitySlots(entries)：换层候选构建前确认现有建筑锚点合法且无重复槽位；不迁移、不收费、不自行重造。
-
-参考核心纯逻辑：
-
+普通建筑核心示例，锚点为(x,y)：
 ```ts
-export function findSlotContainingCell(x: number, y: number): CitySlot | null {
-    if (!Number.isInteger(x) || !Number.isInteger(y)) return null;
-    return getCitySlots().find(slot =>
-        x >= slot.gridX && x < slot.gridX + 2 &&
-        y >= slot.gridY && y < slot.gridY + 2) ?? null;
-}
-export function findSlotByAnchor(x: number, y: number): CitySlot | null {
-    return getCitySlots().find(slot => slot.gridX === x && slot.gridY === y) ?? null;
-}
+// nav coordinates，四个16px细格构成中央32px方块
+const navBlockedCells = [
+    { nx: x * 2 + 1, ny: y * 2 + 1 },
+    { nx: x * 2 + 2, ny: y * 2 + 1 },
+    { nx: x * 2 + 1, ny: y * 2 + 2 },
+    { nx: x * 2 + 2, ny: y * 2 + 2 },
+];
 ```
 
-不得使用全地图x%2/y%2吸附：本项目锚点相对城市内部偏移计算，且中央四块不是建筑槽位。
+这个核心是可配置的原型碰撞形状，不从PNG alpha自动推断。部分屋顶/道具可能覆盖逻辑通路，后续美术应给边缘留白。
+
+### 2.2 唯一性约束
+
+运行时只有WorldCellGrid中的owner记录可以决定静态占用。每条记录同时含：
+```ts
+interface WorldOccupant {
+    ownerId: string;
+    flag: WorldCellFlag;
+    placementCells: readonly GridCell[];   // 完整建造占地
+    navBlockedCells: readonly NavCell[];   // 该owner的实际导航障碍
+}
+interface NavCell { nx: number; ny: number; }
+```
+
+NavigationGrid只持有同一个WorldCellGrid引用；不拥有第二份可独立写入的cells，也不公开setBlocked/setWalkable/replaceFrom。owner表派生的索引可以缓存，但只能由WorldCellGrid事务更新，不允许墙体、建筑或资源管理器私自维护阻挡表。
+
+候选clone用于未提交的事务验证，并非第二份活状态；成功只调用活WorldCellGrid.replaceFrom(candidate)，已有NavigationGrid引用立即看到同一份新事实。失败丢弃候选，不改变活状态。
+
+## 3. 方法级修改方案
+
+### 3.1 新增map/CityLayout.ts
+
+保留布局常量、getCitySlots、findSlotContainingCell、findSlotByAnchor、getCityBoundaryCells、validateCityLayout、assertBuildingsInCitySlots。
+- findSlotContainingCell接受鼠标所在建造格，返回整个2×2槽锚点；基地、墙门和城外返回null。
+- findSlotByAnchor只接受精确合法锚点，用于最终service防绕过校验。
+- buildBoundaryOccupants调用ObstacleResolver生成28个实墙owner和4个门owner；门各占2个建造格，navBlockedCells为空。ID例如city:wall:15:7和city:gate:north。
+- 删除上一版applyCityNavigation设计，不允许从布局直接写导航。
+- 不把空槽作为Reserved记录。基地仍由base_main owner登记，不重复注册。
+- 布局纯函数不加载图、不写资源、不调用经济结算。
 
 ### 3.2 CityVisualConfig.ts：新增映射
 
@@ -144,143 +220,203 @@ export function findSlotByAnchor(x: number, y: number): CitySlot | null {
 
 加载是异步的，要防止组件销毁后继续render；MainMapController在await返回后检查isValid，失败则停止bootstrap，不建立一半可操作的城市。
 
+
 ### 3.4 StaticMap.ts与StaticWorldObjects.ts
 
-StaticMap.ts：保留40×23及城外原有地形，只把CityLayout所定义10×10范围覆盖为Dirt，保证最下方y=16和侧边也具有统一土地。不要根据图片反推碰撞。
+保留40×23，将城市10×10范围覆盖Dirt，保留其余地形。base_main引用同一CITY_LAYOUT.base坐标(18,10)，不重复写魔法数字。外部资源不改，使用完整占地断言没有侵入城市。
+forest/quarry继续引用STATIC_MAP，StaticFloorCatalog无需修改。MapRenderer与TerrainAtlas的悬崖不改。
 
-StaticWorldObjects.ts：base_main保持(18,10)，可引用CITY_LAYOUT.base避免魔法数字；外部资源保留。首层gold_01在(17,6)，没有与新城市相交，不需要随意挪动。
-StaticFloorCatalog.ts的forest/quarry已复制STATIC_MAP，因此采用同一城市坐标，无需新增第三张地图或修改奖励配置。所有资源按完整footprint检查不能与城市保留格重叠。
+### 3.5 新增navigation/NavigationObstacleResolver.ts
 
-### 3.5 BuildingTypes.ts与BuildingPlacementValidator.ts
+集中处理“规则定义→owner数据”，不存运行时状态：
+- forBuilding(instance,definition)：完整4格placementCells；按navigationShape生成centralCore阻挡。blocksNavigation=false仅适用于明确无障碍的未来定义，本次四栋保持true。
+- forWorldObject(data)：基地、资源按getWorldVisualDefinition的完整footprint生成placement与全部细格阻挡，保持原外部资源碰撞语义。
+- forBoundary(cellOrGate)：墙全阻挡；门保留占地、导航为空。
+- validateMask(record)：所有NavCell整数、界内，并落在该owner的placementCells范围内；本轮不做伸出占地的障碍。
+- buildRectNavMask与buildCentralCoreMask：纯函数复用，无asset/Node依赖。
 
-PlacementInvalidReason末尾追加OutsideCitySlot、UnsupportedCityFootprint（不重排原枚举数字）。在所有reason→提示文本映射处补“请选择完整的2×2建筑位”等文案；通过rg检查引用，不默认为只有Ghost使用。
+### 3.6 world/WorldCellGrid.ts：唯一权威记录
 
-新增私有validateSpatial(definition,x,y,ignoredOwnerId?)，validate和validateRelocation共用，职责：
-1. 整数坐标、完整footprint在地图内；
-2. 仅普通2×2定义允许进入本批城市槽位；
-3. findSlotByAnchor必须命中；
-4. terrain检查统一使用definition.allowedTerrain；
-5. 各格无其他owner占用；搬迁仅忽略自身owner。
+保留建造查询isInside/getFlags/isBlocked/getOwnerCells，保持建造格语义。
+新增或替换：
+- claimOccupant(record)：先完整验证重复owner、重复格、越界、占地重叠及mask合法性，再一次安装记录、刷新索引、revision+1。异常不能留下部分flags。
+- releaseOwner(ownerId)：只释放该owner的placement与navBlockedCells，空门释放不会改动旁边墙；不存在owner为幂等无操作。
+- getOwnerRecord(ownerId)：供回滚/搬迁使用，不能只备份placementCells而遗漏mask。
+- isNavBlocked(nx,ny)：读唯一记录派生索引；界外视为阻挡，接口验证整数。
+- clone()：深拷贝owner及索引，不共享可写数组，保留候选originRevision。
+- replaceFrom(candidate)：验证尺寸、候选完整性与活revision符合预期，再原子替换owner和索引；保持WorldCellGrid对象身份。
+- assertConsistent()：开发期检查owner与派生索引一致。
 
-返回空间判定供现有Snapshot字段使用。不要把“城外但地图内”标成OutOfBounds；reason应是OutsideCitySlot。
-validate()额外检查费用与placementGate；validateRelocation()不扣费、不消耗队伍位。中心基地不通过蓝图建造，无需放宽它的4×4校验。
+删除旧claim/claimRect的无mask写入方式，调用点全部迁移到claimOccupant(resolver结果)，避免留下“登记建造但忘记登记导航”的入口。flags只是建造查询缓存，不能让Reserved自动等同于导航阻挡。
 
-最终service必须收到锚点并再次validate，不能仅靠Ghost吸附。非法直接调用tryPlace(id,17,8)也必须失败。
+### 3.7 navigation/NavigationGrid.ts、NavigationGridBuilder.ts
 
-### 3.6 BuildingPlacementTool.ts
+NavigationGrid：
+- constructor(occupancy:WorldCellGrid)，width=occupancy.width*2，height=occupancy.height*2，另暴露mapWidth/mapHeight用于原地图坐标。
+- isWalkable(nx,ny)：细格整数查询，委托occupancy.isNavBlocked。
+- isPointWalkable(point:GridPoint)：转换至NavCell后查询，供出生/交互位等外层调用。
+- worldToNavCell(point)：floor(point.x*2)、floor(point.y*2)，不能round。
+- navCellToWorldPoint(cell)：((nx+0.5)/2,(ny+0.5)/2)。
+- canTraverseSegment(a,b)：对连续移动线段做supercover/DDA细格遍历，检查拐角两侧，避免只看终点就穿过核心。
+- countBlocked()：遍历细格统计，仅调试。
+- 删除公开setBlocked、setWalkable、replaceFrom和独立cells数组。
 
-refreshPointer(screenPoint)：
-- 保留GridPointerProjector的屏幕→地图变换，不能修改通用projector影响其他系统。
-- projected cell查findSlotContainingCell，命中后pointerCell存槽位锚点，不保存原始鼠标格。
-- 无槽时pointerCell/currentSnapshot清空、ghost.hide()；不能继续沿用上一合法槽。
-- 已占槽仍显示该槽的红色Ghost，费用不足也红色，使用validator原规则。
-confirmCurrentPlacement()维持service.tryPlace，但参数只能来自当前已吸附锚点；资源变化后仍重新验证。
-refreshCurrentCell()保持使用同一锚点，保证预览与提交一致。
+NavigationGridBuilder.build(occupancy)仅创建只读NavigationGrid。移除旧build(map,objects)中按图片footprint重复生成障碍的代码；权威占用在MainMapController中先构造。
 
-参考：
+### 3.8 NavigationTypes.ts、AStarPathfinder.ts、TargetApproachResolver.ts
 
+NavigationTypes：
+- 保留GridCell用于32px建造格，GridPoint用于原地图连续单位。
+- 新增NavCell{nx,ny}避免两种整数坐标误传。
+- NavigationPathResult改为{approachPoint:GridPoint,path:GridPoint[]}。暴露给移动系统的路径永远已转换，不把NavCell交给Motor。
+- 不再用approachCell命名一个连续点。
+
+AStarPathfinder.findPath：
+- start/goal/path用NavCell；索引为ny*grid.width+nx，邻域步进为1个细格，10/14成本和禁止斜切障碍角保留。
+- toIndex/fromIndex、heuristic、getPathCost、reconstructPath相应改nx/ny；不改渲染和移速。
+- 输出不含start的约定维持，由WorldNavigator处理真实起点与首个细格中心的接线。
+
+TargetApproachResolver.getApproachCells：
+- 根据对象逻辑rect×2，在完整阻挡范围外枚举细格外围，输出NavCell[]；过滤不可走，去重。
+- 仍只处理已有world target，不为墙新加可攻击目标。
+
+### 3.9 WorldNavigator.ts
+
+- findPathToObject(start,target)：start为GridPoint，求NavCell起点/外围候选，经A*选路径，最终转换为GridPoint[]及approachPoint。
+- findPathToPoint(start,target:GridPoint)：替换内部findPathToCell调用，目标保留小数，不能floor回32px粗格。
+- findRandomPathToTerrain：枚举可走细格，terrain下标floor(nx/2)、floor(ny/2)；最小距离仍用原GridPoint单位。正常A*，不是随机传送。
+- findNearestWalkablePointInRow：替代旧粗格方法，返回细格中心的GridPoint，半格走廊可被找到。
+- resolveStartCell：用worldToNavCell；如果起点非法，返回失败并交调用者处理，不用“找附近可走格”然后直线穿墙接过去。
+- 路径首段从真实start到首个中心用canTraverseSegment校验；必要时先接同一可走细格中心。路径简化如保留，必须逐段同样验证；本轮可不简化。
+- calculatePathCost在NavCell层比较，或按GridPoint距离比较，统一不能混用两种尺度。
+
+参考转换：
 ```ts
-const raw = this.projector.projectScreenPoint(screenPoint);
-const slot = raw ? findSlotContainingCell(raw.x, raw.y) : null;
-if (!slot) {
-    this.pointerCell = null;
-    this.currentSnapshot = null;
-    this.ghost.hide();
-    return;
-}
-this.pointerCell = { x: slot.gridX, y: slot.gridY };
-this.refreshCurrentCell();
+const navPath = pathfinder.findPath(grid, grid.worldToNavCell(start), goal);
+if (navPath === null) return null;
+const points = navPath.map(cell => grid.navCellToWorldPoint(cell));
+// 校验真实起点到首点；空路径保持既有“已到达”语义。
+return points;
 ```
 
-BuildCardStripController、BuildingBlueprintCardView、BuildToolController继续现有下方卡片流程，不增加点击空地进入建造。Esc/右键取消、UI排除区域、主基地弹窗互斥保留。
+### 3.10 BuildingTypes.ts、BuildingCatalog.ts、BuildingPlacementValidator.ts
 
-### 3.7 BuildingRelocationController.ts与BuildingRelocationService.ts
+BuildingDefinition新增navigationShape:'full'|'centralCore'（可选、默认full）；本次四种2×2建筑均blocksNavigation:true、navigationShape:'centralCore'，不再采用false。
+PlacementInvalidReason追加OutsideCitySlot、UnsupportedCityFootprint、NavigationConflict；不重排原值。查询所有reason文案映射并补提示。
 
-refresh()改为指针所在槽作为目标；不再用cell-grabOffset生成任意锚点。清理已不用的grabOffset字段和onDown赋值，其余拖动阈值、取消、onUp最终重采样与输入互斥保留。
-- 空槽：以锚点preview，合法则记录destination。
-- 自身槽：允许no-op，不刷新效果/付费。
-- 他人槽：红色，不实现交换。
-- 基地/城墙/城外：destination=null、hideGhost；松开回原位。
+Validator新增validateSpatial(definition,x,y,ignoredOwnerId?)供validate/validateRelocation共用：
+- 整数坐标、界内、2×2定义、精确槽锚点、allowedTerrain；
+- 对完整4个建造格检查其他owner，边缘可走不意味着可重叠造房；
+- relocation仅忽略自身owner。
+validate继续费用和队伍gate；relocation不扣费。
+动态单位覆盖/路线有效性由service候选校验负责，不在纯validator复制导航状态。
 
-BuildingRelocationService.preview/tryMove/prepare保留事务与身份更新，只通过新的共享validator限制锚点。普通建筑不挡导航后，prepare不再新增阻挡，不能因此撤销原有墙体；保留现有路径检查回调。notifyRelocated()触发空地占用展示刷新。
+### 3.11 BuildingPlacementTool.ts、BuildingRelocationController.ts
 
-十二槽全部占满时，没有空槽可供搬移；本轮不偷偷加入原子交换。满城调序需要后续交换功能，作为限制记录，不宣称这次完成GDD全部调序体验。
+PlacementTool.refreshPointer：projectScreenPoint得到建造格，再findSlotContainingCell；pointerCell保存槽锚点。空槽可预览，占用/缺钱显示红色，无槽清空pointerCell/currentSnapshot并hideGhost，确认重新validate。
+RelocationController.refresh：指针槽作为目标，不再cell-grabOffset；移除闲置grabOffset；保留拖动阈值、最终重采样、Esc/失焦取消及UI互斥。自身槽no-op，他人槽不交换。
 
-### 3.8 BuildingCatalog.ts
+继续使用下方BuildCardStripController和原建造模式，空地加号不注册交互。
 
-仅将当前storage_house_01、lumberjack_house_01、barracks_01、blacksmith_house_01的blocksNavigation置false；占地、费用、效果、蓝图、外观和免费首营规则保持。
+### 3.12 BuildingPlacementService.ts、BuildingRelocationService.ts：统一事务
 
-BuildingPlacementService.tryPlace()已有blocksNavigation条件，因此不需重写扣费/回滚。WorldCellGrid继续claim 4格，确保不能叠放。禁止将“可走”实现为不claim建筑占格。
+二者注入同一个validateCandidateNavigation(candidateView)回调，MainMapController组织现有单位与目的地检查。
 
-### 3.9 MainMapController.ts：首层与换层共用城市约束
+BuildingPlacementService.tryPlace：
+1. 精确槽校验与费用检查，创建候选owner记录。
+2. clone唯一占用表，在候选claim新建筑；构造候选NavigationGrid只读视图。
+3. 检查存活单位foot point与新核心不重叠，已有活动路径是否可重算；失败返回NavigationConflict，不扣费、不刷兵。
+4. 同步提交段内保存必要快照、扣费、replaceFrom(candidate)、创建节点、注册与兵营回调；成功应用重算路径。
+5. 异常回滚经济、owner记录、节点与队伍权益；不再逐格setWalkable回滚。延续既有onPlacementRolledBack，不绕过免费首营和队伍上限。
+6. 注册与通知必须见到完整一致状态；关键提交不得跨await，revision不匹配重算。
 
-bootstrap()：
-1. 先validateCityLayout。
-2. 现有WorldCellGrid登记base/resources后applyCityOccupancy，发现冲突报错。
-3. NavigationGridBuilder.build()完成后applyCityNavigation，再创建SquadRenderer/WorldNavigator。
-4. 创建CityRoot并显式排在建筑与ghost下方；加载图片、render。
-5. buildingRegistry创建后bindRegistry；新建/搬移由订阅刷新。
-6. 保存cityRenderer字段，onDestroy()调用dispose。不把墙伪装成资源WorldObject，避免加入采集、点击或怪物守卫体系。
+BuildingRelocationService.prepare：
+- clone占用表、release旧owner、claim同ID新位置record，再查candidate导航和单位/路径。
+- preview只读候选，tryMove在最终指针处重算；成功移动node、替换owner、更新data锚点，再notifyRelocated与应用路径。
+- 回滚必须保留完整旧record，包括nav mask；不复制/提交第二个导航数组。
+- no-op不改revision、不触发成长。满城交换仍不在本轮。
 
-FloorTransitionController的commit回调（位于MainMapController.ts，不是FloorTransitionController.ts内部）：
-1. 构造nextObjects，先断言建筑锚点合法。
-2. candidateNavigation由NavigationGridBuilder建立，再applyCityNavigation。
-3. candidateCells登记世界对象、applyCityOccupancy、登记已有建筑；blocksNavigation为true时才补建筑障碍，保持现有泛用逻辑。
-4. 校验候选网格、恢复点后才replaceFrom；不能因候选布局错误先覆盖活状态。
-5. 既有建筑和CityRoot保留，不能换层重复加36墙、12空槽；仅refreshSlots做显示校验。
-6. 不因城墙创建重新扣款、刷队伍、发过层奖励。
+建造也必须加入候选路径验证，不能只在搬迁时保护单位。动态单位不存入静态owner表，使用同一候选只读视图检查即可。
 
-NavigationGridBuilder本身可不改；首层和换层都显式调用同一个applyCityNavigation，而不是复制28格的循环。
-WorldCellGrid无需新增flag，复用Reserved与现有owner语义。
+### 3.13 WorldObjectLifecycleController.ts
 
-### 3.10 出生、换层整备及寻路边界
+setup必须拿到WorldCellGrid，不再可选。commitRemoval到原0.12s移除时点后：移除资源显示，releaseOwner(removal.objectId)，不循环navigationGrid.setWalkable。
+移除未使用的navigationGrid字段/参数、getWorldVisualDefinition依赖，并调整MainMapController调用。
+资源耗尽只释放自己的核心范围，墙/门owner不受影响；clearPendingForFloorChange在换入新占用前执行，防止旧层延迟回调误删。
 
-新增纯帮助函数resolveCityRecoveryPoints（可放CityLayout.ts，不另增第四文件）：给定NavigationGrid、人数生成的formationOffsets、候选参考点，按固定距离顺序查找可用集合点；检查中心及所有成员foot point位于可走格且在地图内。优先基地下方内部两排地块，失败再查城门外空地，不静默传送进墙。
-候选使用连续grid point而非仅整数格左上角；每队结果检查阵型边界，避免恢复点落在y=16的南墙。多队候选避免相同中心，仍不引入新的单位碰撞系统。
+### 3.14 SquadMotor.ts、SquadBrain.ts、SquadFloorRecovery.ts
 
-- SquadRenderer.createSquad()：以现有preferredSpawn为输入，resolve后再motor.setup；homeRestCell由已验证point生成，不只修homeRestCell却保留旧spawnPoint。
-- MainMapController换层恢复段：替换直接baseY+height+0.5-bounds.minY的结果为同一resolver；使用结算后人数验算，再交SquadFloorRecovery.recover()。
-- PrimitiveRunState不负责寻路、无需移入Node依赖，也不修改免费首营状态。
-- SquadBrain.updateHomeIdle()当前找Dirt可达点。铺满城市并应用墙后继续走同一寻路；不直接随机传送。若未找到可达目标保持idle。
+- SquadMotor直接使用已有setWaypoints(GridPoint[])。删除旧setPath(GridCell[])或全部迁移后明确停用，禁止再+0.5。
+- getDestinationCell替换为getDestinationPoint，返回真实小数终点，搬迁/建造重算路径不能丢失半格精度。
+- 移速、gridPointToWorld与阵型尺度维持原单位。
+- SquadBrain所有pathResult.path及idle path改调用setWaypoints；homeRestCell改homeRestPoint:GridPoint，setup/resetForFloor、issueReturnHome/startReturnHomeFromCurrentPosition等走findPathToPoint。
+- SquadFloorRecovery.recover的homeCells改homePoints，传递连续点，motor.teleportForFloor仍使用GridPoint。恢复点先验证后提交，不能用floor产生新阻挡点。
 
-重要已知限制：SquadMotor使用队伍中心寻路，WarriorMotor是相对偏移/局部直线移动，没有完整单兵导航。因此本轮能保证队伍中心不穿28格墙，不保证所有阵型成员、展开攻击和归队动画绝不擦墙。不得通过扩大门或删除墙碰撞掩盖问题。完整单兵过门排队/局部避障单开方案；若项目要求本次所有成员绝不穿墙，则本方案需先追加该范围，不能将中心寻路验收冒充单兵碰撞验收。
+### 3.15 SquadRenderer.ts、InteractionSlotResolver.ts
 
-## 4. 实施顺序
+SquadRenderer.createSquad：
+- 原preferredSpawn仅作为搜索参考；利用导航只读视图找合法集合点，检查所有formationOffset对应foot point。
+- 出生point与homeRestPoint来自同一结果，不只修home却保留非法spawn。
+- 城内找不到容纳当前编制的位置时，搜索可达城门外空地，不能将16人强塞半格走廊。新增resolveSpawnPoint方法负责搜索，算法可供MainMapController整备复用为静态纯帮助函数或导出函数，仍放此文件。
+- addMembers后整备使用最终人数，生成完整formationOffsets再选点。
 
-1. CityLayout与坐标断言；先确认12槽、28实墙、8门格、基地不重叠。
-2. CityVisualConfig与CityRenderer；用已上传8图拼出完整城市，检查转角、门缺口、镜像、背景色。
-3. validator与placementTool固定槽位；保留下方蓝图入口。
-4. 搬迁槽位吸附、空地图显示订阅。
-5. 普通地块通行政策、首层/换层墙网格、出生与恢复点。
-6. 整体回归；只修改本方案列出的相关文件。不顺便实现scoreboard、城墙受击或塔楼。
+InteractionSlotResolver：现有floor(worldPoint)再isWalkable的粗格检查改isPointWalkable(worldPoint)，边界检查保持原地图宽高，不用80×46误当逻辑地图。交互位选择若需从当前位置移动，使用同一视图验证线段，不能仅因目标合法就穿核心过去。
 
-美术不足时报告具体缺的朝向或接缝，不改既有tilemap裁剪坐标、不新增臆测atlas。
+### 3.16 MainMapController.ts：唯一装配和换层入口
 
-## 5. 验证与验收
+bootstrap：
+1. validateCityLayout，世界对象经forWorldObject、城墙城门经buildBoundaryOccupants逐个claimOccupant。
+2. 用NavigationGridBuilder.build(worldCellGrid)创建活导航只读视图，所有Navigator/Renderer/服务共享此视图或同一owner引用。
+3. 创建CityRoot/加载图/render；buildingRegistry创建后bindRegistry，销毁时dispose。保持下方蓝图与输入互斥。
+4. 抽出validateCandidateNavigation方法或局部具名函数，取代现有只供relocation的newlyBlocked逻辑。使用isPointWalkable连续坐标，单位中心及存活成员都检查；目的地使用getDestinationPoint与findPathToPoint。
+5. 遇到新的障碍挡住单位当前位置则拒绝建造/搬迁；旧路径受影响时重算，无法达目的地则拒绝。本轮不做强制推开单位。
 
-### 5.1 纯逻辑验证（值得自动化的边界）
-- 12槽共48格，与16格基地不交叠，恰好覆盖内部64格。
-- 城市边框36格唯一，28阻挡+8通道；四门位置正确。
-- 每槽四个鼠标格映射同一锚点；基地、门、墙、城外返回null。
-- 非锚点直接提交失败；重定位忽略自身但不忽略他人。
-- 满建12槽后门到各内部地块仍有导航路径，基地仍不可走。
-- 首层与换层网格的墙阻挡、保留格完全一致。
-- 4、8、16人恢复点的全体foot point不在墙、基地或资源障碍内。
+换层commit回调：
+1. 根据nextObjects、buildBoundaryOccupants和全部现有building实例，构造一个candidate WorldCellGrid；检查槽位和重复owner，derive只读candidate NavigationGrid。
+2. 按结算后编制验证出生/恢复点、资源无重叠，完成后才提交。允许候选失败时保留当前城市，不先覆盖活占用。
+3. 清理旧层pending removal，调用worldCellGrid.replaceFrom(candidate)；不要navigationGrid.replaceFrom。
+4. 沿用结算幂等与资源/怪物替换流程，恢复队伍，保留CityRoot与建筑节点。refreshSlots只更新加号，不重复生成边框。
+5. 所有首层/换层/建造/重摆/资源移除都只通过owner记录改变障碍，不再单独补墙导航。
 
-### 5.2 Creator运行验收
-1. 默认场景显示中心基地、12空槽、闭合城墙四处开口，无塔位。
-2. 空槽只有烘焙加号，不响应点击弹菜单；下方蓝图仍可选、hover与取消正常。
-3. 指针在同槽四格移动Ghost不抖到邻格；城外无残留Ghost、无法建造。
-4. 任意合法槽放置成功只扣一次费用；已占槽不可重复建；建成隐藏加号。
-5. 拖至空槽保留实例ID、绑定队伍、强化和已付费用；旧槽重现、新槽隐藏；非法拖移不影响原位。
-6. 从四门分别下达城内外指令，队伍中心绕墙走门；单兵阵型擦边另记已知限制。
-7. 连续forest→quarry→forest：建筑位置、槽位显示、28格墙障碍保留，资源刷新不压城墙；节点不累加、部队恢复点合法。
-8. 基地AB动画、点击下潜、悬崖边界、摄像机拖动、下方蓝图交互不回归。
-9. 最近邻显示不模糊；墙图不旋转90°；水平镜像仅作用于图片子节点，逻辑位置不翻转。
-10. 资源不足、队伍上限和免费首营仍按当前代码行为，不借本次变动重平衡。
+### 3.17 单兵阵型限制与验收口径
 
-### 5.3 不作为此次完成声明
-- 尚无城墙伤害、四门共享生命实现或塔位。
-- 尚无逐士兵防穿墙与过门排队。
-- 尚无满城建筑交换。
-- 没有以截图拼接验证代替Creator运行验收。
+细格通路解决静态拓扑与小队中心寻路，不等于已经实现单兵独立寻路。当前WarriorMotor相对队伍中心直线运动、展开战斗会有擦墙风险；本轮不改其状态机，不承诺全部成员无穿透。
+
+不允许以此限制为由取消建筑核心或放开墙：核心和墙必须在唯一占用表中真实阻挡，所有正式寻路都必须绕行。下一步若要保证每个成员通过16px边缘，需针对过门收队、局部避障与归队路径另写方案。本次明确验收静态导航、单位生成和候选建造不压人；不把中心能通过当作单兵方案已完成。
+
+## 4. 实施顺序与回归
+
+1. WorldOccupant契约、16px坐标转换、ObstacleResolver与WorldCellGrid唯一占用；先做纯逻辑验证。
+2. NavigationGrid只读化，A*与WorldNavigator路径坐标适配，迁移所有消费者，禁止遗留双写。
+3. CityLayout和图片渲染；保留原坐标与素材。
+4. 新建/搬迁槽吸附和候选事务；资源释放、首层、换层统一注册。
+5. 出生/整备点和idle通路回归。
+6. Creator完整运行验证，不顺便做城墙战斗、塔位或结算UI。
+
+用rg检查setBlocked/setWalkable/navigationGrid.replaceFrom及旧setPath/getDestinationCell/approachCell：运行时代码不能存在旧语义调用。相关纯测试应迁移类型，不能靠any绕过NavCell与GridPoint差异。
+
+## 5. 验收清单
+
+### 5.1 逻辑与唯一性
+- 12槽48建造格+基地16格覆盖内部；28实墙格、8门格；所有owner唯一。
+- 空2×2槽16个导航细格全可走；建筑落成后仅中央4细格阻挡，边缘12格可走。
+- 相邻满建槽位之间形成32px连通通路；核心不能穿，中央基地保持阻挡，四门与城外连通。
+- 门有占用owner、不能造建筑、导航可过；墙owner同时阻建和阻行。
+- 建筑/资源释放只删除自身mask；预览或失败候选不改变活revision，回滚后owner与路径一致。
+- 新建、搬迁与换层只有一份活WorldCellGrid；NavigationGrid不含独立可写阻挡数组。
+- floor点→细格→中心转换正确；地形下标仍40×23，移动速度和战斗距离不翻倍。
+- A*禁止斜切核心/墙角；真实起点接线和路径段不能跨障碍；非法出生不偷偷瞬移出墙。
+
+### 5.2 实机
+- 保留12空槽、4门、无塔位、下方蓝图操作；空地加号不可点开新菜单。
+- 槽内四格吸附同一锚点；城外与门格不能造；合法一次扣费，占用槽不能叠造。
+- 空槽可自由走；建筑中央不能成为合法导航目标，相邻建筑间可以规划和执行小队中心路径。
+- 拖动建筑不收费、不换身份、不刷兵；新核心压住单位或使活动目标不可达时拒绝。
+- 连续换层保留建筑与全部墙门owner，资源刷新正常、旧资源移除不抹掉新障碍。
+- 4/8/16人生成和恢复点合法，无法在城内集合则在可达城门外集合；半格路径无额外+0.5偏移。
+- 单兵阵型擦边问题按3.17记录，不伪报为完整单兵避障。
+- 图片像素清晰、转角相接、加号不透出已占槽；基地AB动画、摄像机和悬崖无回归。
+
+## 6. 交付边界
+
+本次文档修订覆盖原方案，不新增第二份并行生效的V2文档。后续实施会比上一版涉及更多导航文件，这是为了真正表达半格通道并消除占用双写，而不是仅修改美术。不修改GDD、经济数值或免费首营规则。
